@@ -1,6 +1,6 @@
 # Oral Cancer Detection using ConvNeXt + MedSAM
 
-## 📌 Project Overview
+## Project Overview
 This project focuses on developing an efficient deep learning pipeline for oral carcinoma detection using both classification and segmentation.
 
 The proposed system integrates:
@@ -11,7 +11,7 @@ The proposed system integrates:
 
 ---
 
-## 🎯 Problem Statement
+## Problem Statement
 Oral cancer detection suffers from:
 - Late diagnosis
 - Lack of precise lesion localization
@@ -19,7 +19,7 @@ Oral cancer detection suffers from:
 
 ---
 
-## 🚀 Proposed Solution
+## Proposed Solution
 We propose a lightweight dual-branch pipeline:
 
 ```
@@ -32,14 +32,14 @@ Input Image
 
 ---
 
-## 🧠 Key Contributions
+## Key Contributions
 - Efficient and deployable architecture
 - Integration of classification + segmentation
 - Cloud-assisted segmentation for scalability
 
 ---
 
-## 📊 Dataset
+## Dataset
 We use publicly available oral cancer datasets.
 
 Note:
