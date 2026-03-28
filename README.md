@@ -60,9 +60,10 @@ Sample images are provided in `/data/sample_images/`.
 
 ## Repository Structure
 ```
-docs/ → Report & presentation
-data/ → Sample images
-src/ → Code (Phase 2)
+data/
+└── sample_images/
+    ├── cancer/
+    └── non-cancer/
 ```
 
 ---
