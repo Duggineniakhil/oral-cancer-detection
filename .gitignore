@@ -73,3 +73,13 @@ splits/
 # Temporary Office files
 ~$*
 *.tmp
+
+# ============================================================
+# MODELS & GENERATED SUBSETS
+# ============================================================
+medsam_hf/
+owlv2/
+MedSAM/
+preprocessed/
+segmentation_subset_40/
+*.bin
