@@ -2,16 +2,16 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+from config import DATA_ROOT, OUTPUT_ROOT
+
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+MASTER_CSV = DATA_ROOT / "master_dataset.csv"
+OUTPUT_DIR = OUTPUT_ROOT / "splits"
 
-MASTER_CSV = ROOT / "master_dataset.csv"
-OUTPUT_DIR = ROOT / "splits"
-
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================

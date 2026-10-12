@@ -149,6 +149,8 @@ oral-cancer-detection/
 │
 ├── README.md
 ├── .gitignore
+├── requirements.txt
+├── config.py                 # Shared paths (laptop / Kaggle)
 │
 ├── check_dataset.py          # Verify raw dataset counts
 ├── create_master_dataset.py  # Combine datasets into one CSV (keeps NDB-UFES folds)
@@ -161,7 +163,11 @@ oral-cancer-detection/
 ├── check_color_shortcut.py   # Colour-only classifier to measure dataset colour bias
 ├── prepare_annotation_set.py # Build a set of images for manual mask annotation
 ├── select_subset.py          # Pick a diverse 40-image subset for segmentation trials
-├── auto_segment.py           # OWL-v2 box → MedSAM mask → ROI (experimental)
+├── auto_segment.py           # MedSAM mask (label-free box prompt) → ROI
+│
+├── kaggle/
+│   ├── medsam_segmentation.ipynb # Run segmentation on a Kaggle GPU
+│   └── make_upload_zip.py        # Package data for a private Kaggle Dataset
 │
 ├── dataset_1_ndb_ufes/       # local only, ignored by Git
 ├── dataset_2_normal/         # local only, ignored by Git
@@ -208,8 +214,34 @@ oral-cancer-detection/
 
 ---
 
+## Running the Code
+
+```bash
+pip install -r requirements.txt
+```
+
+Data preparation (laptop), in order:
+
+```bash
+python create_master_dataset.py
+python create_splits.py
+python preprocess.py
+python stain_normalize.py
+```
+
+All scripts read and write relative to the project folder by default. To use other locations, set `ORAL_CANCER_DATA_ROOT` (inputs) and `ORAL_CANCER_OUTPUT_ROOT` (outputs). Paths inside the CSV files are relative, so the CSVs work on any machine.
+
+### Segmentation on Kaggle (GPU)
+
+MedSAM is slow on a laptop CPU, so the full segmentation runs on Kaggle:
+
+1. `python kaggle/make_upload_zip.py` creates `kaggle_upload/oral-cancer-data.zip` (`splits/` + `preprocessed_normalized/`).
+2. Upload it as a **private** Kaggle Dataset. The Normal images are CC BY-NC-ND, so modified versions must not be shared publicly.
+3. Import `kaggle/medsam_segmentation.ipynb` into Kaggle, add the dataset as input, enable GPU and Internet, and follow the steps in the notebook.
+4. Download `segmentation.zip` and unzip it into the project folder.
+
 ## Technologies
-- **Python**, **PyTorch**, **OpenCV**
+- **Python**, **PyTorch**, **Hugging Face Transformers**
 - **MedSAM**, **ConvNeXt-Tiny**
 - **NumPy**, **Pandas**, **scikit-learn**
 

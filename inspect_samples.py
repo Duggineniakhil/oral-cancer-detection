@@ -4,17 +4,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+CSV_PATH = DATA_ROOT / "splits" / "final_dataset.csv"
+OUTPUT_DIR = OUTPUT_ROOT / "outputs"
 
-CSV_PATH = ROOT / "splits" / "final_dataset.csv"
-OUTPUT_DIR = ROOT / "outputs"
-
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -75,7 +75,7 @@ for row, class_name in enumerate(classes):
 
         ax = axes[row, col]
 
-        image_path = Path(sample["image_path"])
+        image_path = resolve(sample["image_path"])
         image = Image.open(image_path)
 
         ax.imshow(image)
@@ -137,7 +137,7 @@ for class_name in classes:
 
     for _, sample in class_samples.iterrows():
 
-        image_path = Path(sample["image_path"])
+        image_path = resolve(sample["image_path"])
 
         with Image.open(image_path) as img:
             w, h = img.size

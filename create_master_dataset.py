@@ -1,18 +1,20 @@
 from pathlib import Path
 import pandas as pd
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+ROOT = DATA_ROOT
 
 D1_IMAGES = ROOT / "dataset_1_ndb_ufes" / "images"
 D1_METADATA = ROOT / "dataset_1_ndb_ufes" / "metadata"
 
 D2_IMAGES = ROOT / "dataset_2_normal" / "images"
 
-OUTPUT = ROOT / "master_dataset.csv"
+OUTPUT = OUTPUT_ROOT / "master_dataset.csv"
 
 
 # ============================================================
@@ -51,7 +53,7 @@ d1_df["class"] = d1_df["label_number"].map(label_mapping)
 d1_df["source"] = "NDB-UFES"
 
 d1_df["image_path"] = d1_df["path"].apply(
-    lambda x: str(D1_IMAGES / x)
+    lambda x: relative(D1_IMAGES / x)
 )
 
 
@@ -74,7 +76,7 @@ d2_images = sorted([
 ])
 
 d2_df = pd.DataFrame({
-    "image_path": [str(p) for p in d2_images],
+    "image_path": [relative(p) for p in d2_images],
     "class": "Normal",
     "source": "Dataset2_Normal"
 })
@@ -128,7 +130,7 @@ print(master_df["split"].value_counts())
 # ============================================================
 
 master_df["exists"] = master_df["image_path"].apply(
-    lambda x: Path(x).exists()
+    lambda x: resolve(x).exists()
 )
 
 missing = master_df[~master_df["exists"]]

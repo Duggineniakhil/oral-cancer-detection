@@ -3,13 +3,13 @@ import pandas as pd
 from PIL import Image
 from collections import Counter
 
+from config import DATA_ROOT, resolve
+
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
-
-CSV_PATH = ROOT / "splits" / "final_dataset.csv"
+CSV_PATH = DATA_ROOT / "splits" / "final_dataset.csv"
 
 
 # ============================================================
@@ -34,7 +34,7 @@ modes = Counter()
 
 for _, row in df.iterrows():
 
-    image_path = Path(row["image_path"])
+    image_path = resolve(row["image_path"])
 
     try:
         with Image.open(image_path) as img:

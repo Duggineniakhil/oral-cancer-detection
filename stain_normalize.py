@@ -6,23 +6,23 @@ import pandas as pd
 from PIL import Image
 from tqdm import tqdm
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+CSV_PATH = DATA_ROOT / "splits" / "preprocessed_dataset.csv"
 
-CSV_PATH = ROOT / "splits" / "preprocessed_dataset.csv"
-
-OUTPUT_DIR = ROOT / "preprocessed_normalized"
-OUTPUT_CSV = ROOT / "splits" / "normalized_dataset.csv"
+OUTPUT_DIR = OUTPUT_ROOT / "preprocessed_normalized"
+OUTPUT_CSV = OUTPUT_ROOT / "splits" / "normalized_dataset.csv"
 
 # Remove stale outputs from previous runs
 if OUTPUT_DIR.exists():
     shutil.rmtree(OUTPUT_DIR)
 
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -141,7 +141,7 @@ all_stains = []
 all_max_c = []
 
 for path in ref_pool["image_path"]:
-    with Image.open(path) as img:
+    with Image.open(resolve(path)) as img:
         fit = fit_stains(np.asarray(img.convert("RGB")))
     if fit is not None:
         all_stains.append(fit[0])
@@ -174,7 +174,7 @@ failed = 0
 
 for _, row in tqdm(df.iterrows(), total=len(df), desc="Normalizing"):
 
-    src_path = Path(row["image_path"])
+    src_path = resolve(row["image_path"])
     out_dir = OUTPUT_DIR / row["split"] / row["class"]
     out_dir.mkdir(parents=True, exist_ok=True)
     dest_path = out_dir / src_path.name
@@ -192,8 +192,8 @@ for _, row in tqdm(df.iterrows(), total=len(df), desc="Normalizing"):
     Image.fromarray(normalized).save(dest_path, format="PNG")
 
     record = row.to_dict()
-    record["image_path"] = str(dest_path)
-    record["preprocessed_path"] = str(src_path)
+    record["image_path"] = relative(dest_path)
+    record["preprocessed_path"] = row["image_path"]
     record["stain_normalized"] = normalized is not rgb
     records.append(record)
 

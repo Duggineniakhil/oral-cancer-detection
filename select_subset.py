@@ -6,26 +6,23 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+CSV_PATH = DATA_ROOT / "splits" / "normalized_dataset.csv"
 
-CSV_PATH = ROOT / "splits" / "preprocessed_dataset.csv"
-
-D1_METADATA = ROOT / "dataset_1_ndb_ufes" / "metadata"
-
-OUTPUT_DIR = ROOT / "segmentation_subset_40"
+OUTPUT_DIR = OUTPUT_ROOT / "segmentation_subset"
 OUTPUT_CSV = OUTPUT_DIR / "subset.csv"
 
-# Clean output directory
+# Clean output directory (including any subfolders from earlier runs)
 if OUTPUT_DIR.exists():
-    for f in OUTPUT_DIR.glob("*"):
-        f.unlink()
+    shutil.rmtree(OUTPUT_DIR)
 
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -33,7 +30,12 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ============================================================
 
 SAMPLES_PER_CLASS = 10
-MAX_PER_FOLDER = 2
+
+# At most this many images from the same SOURCE image. This matters
+# for Normal, where up to 12 tiles come from one microscope image.
+# (NDB-UFES has no patch-to-patient/image mapping, so each patch is
+# its own group. Its "folder" column is a CV fold, not a patient.)
+MAX_PER_GROUP = 2
 
 classes = [
     "OSCC",
@@ -44,25 +46,14 @@ classes = [
 
 
 # ============================================================
-# LOAD DATASET + METADATA
+# LOAD DATASET
 # ============================================================
 
 df = pd.read_csv(CSV_PATH)
 
-# Load Dataset 1 metadata (contains folder/lesion info)
-train_meta = pd.read_csv(D1_METADATA / "sabpatch_parsed_folders.csv")
-test_meta = pd.read_csv(D1_METADATA / "sabpatch_parsed_test.csv")
-d1_meta = pd.concat([train_meta, test_meta], ignore_index=True)
-
-# Create lookup: patch filename -> folder
-folder_lookup = dict(zip(d1_meta["path"], d1_meta["folder"]))
-
-# Add folder column to main dataframe
-df["patch_name"] = df["original_path"].apply(lambda x: Path(x).name)
-df["folder"] = df["patch_name"].map(folder_lookup)
+df["group"] = df["original_path"]
 
 print("Total images:", len(df))
-print("Images with folder metadata:", df["folder"].notna().sum())
 print()
 
 
@@ -112,16 +103,14 @@ def extract_features(image_path):
     return np.array(features, dtype=np.float32)
 
 
-def folder_aware_farthest_point_sampling(
-    features, folders, n_select, max_per_folder
+def group_aware_farthest_point_sampling(
+    features, groups, n_select, max_per_group
 ):
     """
-    Farthest-point sampling with folder/patient constraint.
+    Farthest-point sampling with a per-group cap.
 
-    Ensures at most max_per_folder images from the same
-    folder (lesion/patient group) are selected.
-
-    If folders is None (Dataset 2), runs unconstrained.
+    Ensures at most max_per_group images from the same group
+    (source image) are selected.
     """
     n_total = len(features)
 
@@ -133,68 +122,48 @@ def folder_aware_farthest_point_sampling(
     std = features.std(axis=0) + 1e-8
     normed = (features - mean) / std
 
-    # Track folder counts
-    folder_counts = defaultdict(int)
-    has_folders = folders is not None
+    group_counts = defaultdict(int)
 
     # Start with the image closest to the centroid
     centroid = normed.mean(axis=0)
-    dists_to_centroid = np.linalg.norm(normed - centroid, axis=1)
-
-    # Sort by distance to centroid, pick first valid one
-    sorted_indices = np.argsort(dists_to_centroid)
-    first_idx = int(sorted_indices[0])
-
-    if has_folders and folders[first_idx] is not None:
-        folder_counts[folders[first_idx]] += 1
+    first_idx = int(np.argmin(np.linalg.norm(normed - centroid, axis=1)))
 
     selected = [first_idx]
+    group_counts[groups[first_idx]] += 1
 
     # Track minimum distance from each point to any selected point
     min_dists = np.linalg.norm(normed - normed[first_idx], axis=1)
 
     for _ in range(n_select - 1):
 
-        # Mask already selected
         candidate_dists = min_dists.copy()
         candidate_dists[selected] = -1
 
-        # Sort candidates by distance (farthest first)
-        sorted_candidates = np.argsort(-candidate_dists)
-
-        # Find the farthest valid candidate
         next_idx = None
 
-        for candidate in sorted_candidates:
+        # Farthest candidate whose group is not full
+        for candidate in np.argsort(-candidate_dists):
 
             if candidate_dists[candidate] <= 0:
                 break
 
-            # Check folder constraint
-            if has_folders and folders[candidate] is not None:
-                folder = folders[candidate]
-                if folder_counts[folder] >= max_per_folder:
-                    continue
+            if group_counts[groups[candidate]] >= max_per_group:
+                continue
 
             next_idx = int(candidate)
             break
 
         if next_idx is None:
             print("    WARNING: Could not find valid candidate, relaxing constraint")
-            # Fallback: pick farthest regardless of folder
-            candidate_dists[selected] = -1
             next_idx = int(np.argmax(candidate_dists))
 
         selected.append(next_idx)
+        group_counts[groups[next_idx]] += 1
 
-        if has_folders and folders[next_idx] is not None:
-            folder_counts[folders[next_idx]] += 1
-
-        # Update minimum distances
         new_dists = np.linalg.norm(normed - normed[next_idx], axis=1)
         min_dists = np.minimum(min_dists, new_dists)
 
-    return selected, dict(folder_counts)
+    return selected
 
 
 # ============================================================
@@ -210,44 +179,25 @@ for class_name in classes:
     class_df = df[df["class"] == class_name].reset_index(drop=True)
 
     print(f"  Total available: {len(class_df)}")
+    print(f"  Source images:   {class_df['group'].nunique()}")
 
-    # Extract features
     print(f"  Extracting features...")
 
-    features_list = []
+    features_array = np.stack([
+        extract_features(resolve(p))
+        for p in class_df["image_path"]
+    ])
 
-    for _, row in class_df.iterrows():
-        feat = extract_features(row["image_path"])
-        features_list.append(feat)
+    print(f"  Selecting {SAMPLES_PER_CLASS} diverse images (max {MAX_PER_GROUP}/source image)...")
 
-    features_array = np.stack(features_list)
-
-    # Get folder info (None for Dataset 2)
-    if class_df["folder"].notna().any():
-        folders = class_df["folder"].tolist()
-        unique_folders = set(f for f in folders if f is not None and not (isinstance(f, float) and np.isnan(f)))
-        print(f"  Unique folders/lesions: {len(unique_folders)}")
-    else:
-        folders = None
-        print(f"  No folder metadata (Dataset 2)")
-
-    # Folder-aware farthest-point sampling
-    print(f"  Selecting {SAMPLES_PER_CLASS} diverse images (max {MAX_PER_FOLDER}/folder)...")
-
-    selected_indices, folder_dist = folder_aware_farthest_point_sampling(
+    selected_indices = group_aware_farthest_point_sampling(
         features_array,
-        folders,
+        class_df["group"].tolist(),
         SAMPLES_PER_CLASS,
-        MAX_PER_FOLDER
+        MAX_PER_GROUP
     )
 
     selected_rows = class_df.iloc[selected_indices]
-
-    # Report folder distribution
-    if folders is not None:
-        print(f"  Folder distribution:")
-        for folder, count in sorted(folder_dist.items()):
-            print(f"    Folder {int(folder)}: {count} images")
 
     all_selected.append(selected_rows)
 
@@ -256,43 +206,23 @@ for class_name in classes:
 
 
 # ============================================================
-# COPY IMAGES
+# COPY IMAGES (for browsing) AND SAVE CSV
 # ============================================================
 
 print("Copying images to subset directory...")
 
-records = []
+subset_df = pd.concat(all_selected, ignore_index=True).drop(columns=["group"])
 
-for selected_df in all_selected:
+preview_dir = OUTPUT_DIR / "images"
+preview_dir.mkdir(parents=True, exist_ok=True)
 
-    for _, row in selected_df.iterrows():
+for _, row in subset_df.iterrows():
+    src = resolve(row["image_path"])
+    shutil.copy2(src, preview_dir / f"{row['class']}__{src.name}")
 
-        src = Path(row["image_path"])
-
-        dest_name = f"{row['class']}__{src.name}"
-        dest = OUTPUT_DIR / dest_name
-
-        shutil.copy2(src, dest)
-
-        folder_val = row.get("folder", None)
-        if isinstance(folder_val, float) and np.isnan(folder_val):
-            folder_val = None
-
-        records.append({
-            "image_path": str(dest),
-            "original_path": row.get("original_path", str(src)),
-            "class": row["class"],
-            "source": row["source"],
-            "split": row["split"],
-            "folder": int(folder_val) if folder_val is not None else ""
-        })
-
-
-# ============================================================
-# SAVE CSV
-# ============================================================
-
-subset_df = pd.DataFrame(records)
+# image_path keeps pointing at the dataset image, so segmentation
+# results can be joined back to the full dataset
+subset_df["folder"] = subset_df["folder"].astype("Int64")
 subset_df.to_csv(OUTPUT_CSV, index=False)
 
 
@@ -304,20 +234,16 @@ print("\n========================================")
 print("SEGMENTATION SUBSET CREATED")
 print("========================================")
 
-print(f"\nTotal images: {len(records)}")
+print(f"\nTotal images: {len(subset_df)}")
 
 print("\nPer-class:")
-for class_name in classes:
-    count = sum(1 for r in records if r["class"] == class_name)
-    print(f"  {class_name}: {count}")
+print(subset_df["class"].value_counts().to_string())
 
 print(f"\nOutput directory: {OUTPUT_DIR}")
 print(f"Subset CSV:       {OUTPUT_CSV}")
 
 print("\nSelected images:")
 for class_name in classes:
-    class_records = [r for r in records if r["class"] == class_name]
     print(f"\n  --- {class_name} ---")
-    for r in class_records:
-        folder_str = f"  [folder {r['folder']}]" if r["folder"] != "" else ""
-        print(f"    {Path(r['image_path']).name}{folder_str}")
+    for p in subset_df[subset_df["class"] == class_name]["image_path"]:
+        print(f"    {Path(p).name}")

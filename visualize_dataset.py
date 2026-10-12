@@ -4,14 +4,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve
+
 
 # ============================================================
 # PATH
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
-
-CSV_PATH = ROOT / "splits" / "final_dataset.csv"
+CSV_PATH = DATA_ROOT / "splits" / "final_dataset.csv"
 
 
 # ============================================================
@@ -55,7 +55,7 @@ for ax, class_name in zip(axes, classes):
         random_state=42
     ).iloc[0]
 
-    image_path = Path(sample["image_path"])
+    image_path = resolve(sample["image_path"])
 
     image = Image.open(image_path)
 
@@ -71,7 +71,7 @@ for ax, class_name in zip(axes, classes):
 
 plt.tight_layout()
 
-output_path = ROOT / "dataset_samples.png"
+output_path = OUTPUT_ROOT / "dataset_samples.png"
 
 plt.savefig(
     output_path,

@@ -24,6 +24,9 @@ splits/
 preprocessed/
 preprocessed_normalized/
 segmentation_subset_40/
+segmentation_subset/
+segmentation/
+kaggle_upload/
 annotation/
 outputs/
 processed/

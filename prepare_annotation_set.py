@@ -3,20 +3,20 @@ import shutil
 
 import pandas as pd
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+CSV_PATH = DATA_ROOT / "splits" / "final_dataset.csv"
 
-CSV_PATH = ROOT / "splits" / "final_dataset.csv"
-
-ANNOTATION_DIR = ROOT / "annotation"
+ANNOTATION_DIR = OUTPUT_ROOT / "annotation"
 ANNOTATION_IMAGES = ANNOTATION_DIR / "images"
 
-ANNOTATION_DIR.mkdir(exist_ok=True)
-ANNOTATION_IMAGES.mkdir(exist_ok=True)
+ANNOTATION_DIR.mkdir(parents=True, exist_ok=True)
+ANNOTATION_IMAGES.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -78,7 +78,7 @@ records = []
 
 for _, row in annotation_df.iterrows():
 
-    src = Path(row["image_path"])
+    src = resolve(row["image_path"])
 
     # Use class prefix to avoid filename collisions
     dest_name = f"{row['class']}__{src.name}"
@@ -89,8 +89,8 @@ for _, row in annotation_df.iterrows():
 
     records.append({
         "image_name": dest_name,
-        "image_path": str(dest),
-        "original_path": str(src),
+        "image_path": relative(dest),
+        "original_path": row["image_path"],
         "class": row["class"],
         "source": row["source"],
         "split": row["split"],
@@ -118,7 +118,7 @@ for class_name in classes:
 
     class_dir = ANNOTATION_IMAGES / class_name
 
-    class_dir.mkdir(exist_ok=True)
+    class_dir.mkdir(parents=True, exist_ok=True)
 
     # Also copy into class subdirectories
     class_records = [
@@ -127,7 +127,7 @@ for class_name in classes:
     ]
 
     for rec in class_records:
-        src = Path(rec["image_path"])
+        src = resolve(rec["image_path"])
         dest = class_dir / Path(rec["image_name"]).name
         shutil.copy2(src, dest)
 

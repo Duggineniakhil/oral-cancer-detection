@@ -1,11 +1,13 @@
 from pathlib import Path
 import pandas as pd
 
+from config import DATA_ROOT
+
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+ROOT = DATA_ROOT
 
 D1_IMAGES = ROOT / "dataset_1_ndb_ufes" / "images"
 D1_METADATA = ROOT / "dataset_1_ndb_ufes" / "metadata"

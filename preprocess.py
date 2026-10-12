@@ -7,23 +7,23 @@ import pandas as pd
 from PIL import Image
 from tqdm import tqdm
 
+from config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
+CSV_PATH = DATA_ROOT / "splits" / "final_dataset.csv"
 
-CSV_PATH = ROOT / "splits" / "final_dataset.csv"
-
-OUTPUT_DIR = ROOT / "preprocessed"
-OUTPUT_CSV = ROOT / "splits" / "preprocessed_dataset.csv"
+OUTPUT_DIR = OUTPUT_ROOT / "preprocessed"
+OUTPUT_CSV = OUTPUT_ROOT / "splits" / "preprocessed_dataset.csv"
 
 # Remove stale outputs from previous runs (e.g. old resized Normals)
 if OUTPUT_DIR.exists():
     shutil.rmtree(OUTPUT_DIR)
 
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -120,7 +120,7 @@ original_sizes = Counter()
 
 for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
 
-    src_path = Path(row["image_path"])
+    src_path = resolve(row["image_path"])
     out_dir = OUTPUT_DIR / row["split"] / row["class"]
 
     with Image.open(src_path) as img:
@@ -130,7 +130,7 @@ for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
         original_sizes[original_size] += 1
 
         base = {
-            "original_path": str(src_path),
+            "original_path": row["image_path"],
             "class": row["class"],
             "source": row["source"],
             "split": row["split"],
@@ -148,7 +148,7 @@ for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
             copied_count += 1
 
             records.append({
-                "image_path": str(dest_path),
+                "image_path": relative(dest_path),
                 **base,
                 "tile_row": 0,
                 "tile_col": 0,
@@ -173,7 +173,7 @@ for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
             tiles_kept += 1
 
             records.append({
-                "image_path": str(dest_path),
+                "image_path": relative(dest_path),
                 **base,
                 "tile_row": r,
                 "tile_col": c,
@@ -250,7 +250,7 @@ verify_errors = 0
 
 for _, row in preprocessed_df.sample(min(50, len(preprocessed_df)), random_state=42).iterrows():
 
-    path = Path(row["image_path"])
+    path = resolve(row["image_path"])
 
     if not path.exists():
         print(f"  MISSING: {path}")

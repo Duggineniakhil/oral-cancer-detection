@@ -9,16 +9,16 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
+from config import DATA_ROOT, resolve
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-ROOT = Path(r"E:\Oral_cancer")
-
 DATASETS = {
-    "Before normalization": ROOT / "splits" / "preprocessed_dataset.csv",
-    "After normalization": ROOT / "splits" / "normalized_dataset.csv",
+    "Before normalization": DATA_ROOT / "splits" / "preprocessed_dataset.csv",
+    "After normalization": DATA_ROOT / "splits" / "normalized_dataset.csv",
 }
 
 
@@ -39,7 +39,7 @@ THUMBNAIL = 128
 # ============================================================
 
 def colour_histogram(path):
-    with Image.open(path) as img:
+    with Image.open(resolve(path)) as img:
         img = img.convert("RGB").resize((THUMBNAIL, THUMBNAIL))
         rgb = np.asarray(img)
         hsv = np.asarray(img.convert("HSV"))
