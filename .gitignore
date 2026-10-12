@@ -22,6 +22,7 @@ dataset_2_normal/
 master_dataset.csv
 splits/
 preprocessed/
+preprocessed_normalized/
 segmentation_subset_40/
 annotation/
 outputs/

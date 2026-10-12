@@ -157,6 +157,8 @@ oral-cancer-detection/
 ├── inspect_samples.py        # Per-class sample grid
 ├── visualize_dataset.py      # One sample per class
 ├── preprocess.py             # Copy 512×512 patches, tile Normal images
+├── stain_normalize.py        # Macenko stain normalisation (reference: NDB-UFES train)
+├── check_color_shortcut.py   # Colour-only classifier to measure dataset colour bias
 ├── prepare_annotation_set.py # Build a set of images for manual mask annotation
 ├── select_subset.py          # Pick a diverse 40-image subset for segmentation trials
 ├── auto_segment.py           # OWL-v2 box → MedSAM mask → ROI (experimental)
@@ -166,6 +168,7 @@ oral-cancer-detection/
 │
 ├── splits/                   # generated locally, ignored by Git
 ├── preprocessed/             # generated locally, ignored by Git
+├── preprocessed_normalized/  # generated locally, ignored by Git
 ├── outputs/                  # generated results, ignored by Git
 └── master_dataset.csv        # generated locally, ignored by Git
 ```
@@ -188,6 +191,7 @@ oral-cancer-detection/
 - [x] Four-class dataset construction
 - [x] Train/validation/test splitting (official NDB-UFES folds)
 - [x] Preprocessing (Normal images tiled to match NDB-UFES scale)
+- [x] Macenko stain normalisation
 - [ ] MedSAM segmentation implementation
 - [ ] Exact lesion ROI extraction
 - [ ] ConvNeXt-Tiny classification
