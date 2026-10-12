@@ -1,6 +1,8 @@
 from pathlib import Path
 from collections import Counter
+import shutil
 
+import numpy as np
 import pandas as pd
 from PIL import Image
 from tqdm import tqdm
@@ -17,6 +19,10 @@ CSV_PATH = ROOT / "splits" / "final_dataset.csv"
 OUTPUT_DIR = ROOT / "preprocessed"
 OUTPUT_CSV = ROOT / "splits" / "preprocessed_dataset.csv"
 
+# Remove stale outputs from previous runs (e.g. old resized Normals)
+if OUTPUT_DIR.exists():
+    shutil.rmtree(OUTPUT_DIR)
+
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
@@ -24,9 +30,58 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # CONFIGURATION
 # ============================================================
 
-TARGET_SIZE = (512, 512)
+# NDB-UFES patches are 512x512 crops of 2048x1536 microscope
+# images (Leica ICC50 HD, 10x/40x objectives). The Normal images
+# come from the same camera at the same objectives, so they are
+# TILED into 512x512 crops rather than resized. Resizing would
+# shrink cells ~4x and give the classifier a scale shortcut.
+TILE_SIZE = 512
 
-RESAMPLE = Image.LANCZOS
+# Fraction of a tile that must be tissue. NDB-UFES patches were
+# curated to exclude blank areas (~99% of them are >= 0.6 tissue),
+# so Normal tiles below 0.6 are discarded to match that curation.
+MIN_TISSUE_FRACTION = 0.6
+
+# Tissue detection uses optical density (OD) relative to each
+# image's own background (glass) colour. The Normal slides have
+# strong, varying colour casts (cyan/green glass), so fixed
+# colour or brightness thresholds fail on them.
+BACKGROUND_PERCENTILE = 99
+OD_THRESHOLD = 0.2
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def tissue_mask(img):
+    """Boolean mask of pixels that absorb light relative to the glass."""
+    rgb = np.asarray(img).astype(np.float32)
+
+    # Glass is the brightest region in brightfield microscopy
+    background = np.percentile(
+        rgb.reshape(-1, 3),
+        BACKGROUND_PERCENTILE,
+        axis=0
+    )
+
+    od = -np.log(np.clip((rgb + 1) / (background + 1), 1e-6, 1.0))
+
+    return od.max(axis=2) > OD_THRESHOLD
+
+
+def iter_tiles(img):
+    """Yield (row, col, box) for a non-overlapping TILE_SIZE grid."""
+    w, h = img.size
+    for r in range(h // TILE_SIZE):
+        for c in range(w // TILE_SIZE):
+            box = (
+                c * TILE_SIZE,
+                r * TILE_SIZE,
+                (c + 1) * TILE_SIZE,
+                (r + 1) * TILE_SIZE
+            )
+            yield r, c, box
 
 
 # ============================================================
@@ -35,27 +90,8 @@ RESAMPLE = Image.LANCZOS
 
 df = pd.read_csv(CSV_PATH)
 
-print("Total images:", len(df))
+print("Total source images:", len(df))
 print()
-
-
-# ============================================================
-# INSPECT ORIGINAL SIZES
-# ============================================================
-
-print("Scanning original image sizes...")
-
-original_sizes = Counter()
-
-for _, row in df.iterrows():
-    with Image.open(row["image_path"]) as img:
-        original_sizes[img.size] += 1
-
-print("\nOriginal size distribution:")
-for size, count in original_sizes.most_common():
-    w, h = size
-    needs_resize = "<-- needs resize" if (w, h) != TARGET_SIZE else "<-- already target size"
-    print(f"  {w}x{h}: {count} images  {needs_resize}")
 
 
 # ============================================================
@@ -74,48 +110,75 @@ for split in splits:
 # PREPROCESS
 # ============================================================
 
-print(f"\nPreprocessing all images to {TARGET_SIZE[0]}x{TARGET_SIZE[1]}...")
+print(f"Preprocessing: copy {TILE_SIZE}x{TILE_SIZE} patches, tile larger images...")
 
 records = []
-resized_count = 0
-skipped_count = 0
+copied_count = 0
+tiles_kept = 0
+tiles_discarded = 0
+original_sizes = Counter()
 
 for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
 
     src_path = Path(row["image_path"])
-
-    # Output: preprocessed/{split}/{class}/{filename}.png
-    dest_name = src_path.stem + ".png"
-    dest_path = OUTPUT_DIR / row["split"] / row["class"] / dest_name
+    out_dir = OUTPUT_DIR / row["split"] / row["class"]
 
     with Image.open(src_path) as img:
 
+        img = img.convert("RGB")
         original_size = img.size
+        original_sizes[original_size] += 1
 
-        # Convert to RGB if needed
-        if img.mode != "RGB":
-            img = img.convert("RGB")
+        base = {
+            "original_path": str(src_path),
+            "class": row["class"],
+            "source": row["source"],
+            "split": row["split"],
+            "folder": row.get("folder"),
+            "magnification": row.get("magnification"),
+            "original_width": original_size[0],
+            "original_height": original_size[1],
+        }
 
-        # Resize if dimensions don't match target
-        if img.size != TARGET_SIZE:
-            img = img.resize(TARGET_SIZE, resample=RESAMPLE)
-            resized_count += 1
-        else:
-            skipped_count += 1
+        # Already a patch: save as-is (no filtering, already curated)
+        if original_size == (TILE_SIZE, TILE_SIZE):
 
-        img.save(dest_path, format="PNG")
+            dest_path = out_dir / (src_path.stem + ".png")
+            img.save(dest_path, format="PNG")
+            copied_count += 1
 
-    records.append({
-        "image_path": str(dest_path),
-        "original_path": str(src_path),
-        "class": row["class"],
-        "source": row["source"],
-        "split": row["split"],
-        "original_width": original_size[0],
-        "original_height": original_size[1],
-        "preprocessed_width": TARGET_SIZE[0],
-        "preprocessed_height": TARGET_SIZE[1]
-    })
+            records.append({
+                "image_path": str(dest_path),
+                **base,
+                "tile_row": 0,
+                "tile_col": 0,
+                "tissue_fraction": np.nan,  # not filtered
+            })
+            continue
+
+        # Larger image: cut into tiles, keep tiles with enough tissue
+        mask = tissue_mask(img)
+
+        for r, c, box in iter_tiles(img):
+
+            x0, y0, x1, y1 = box
+            fraction = float(mask[y0:y1, x0:x1].mean())
+
+            if fraction < MIN_TISSUE_FRACTION:
+                tiles_discarded += 1
+                continue
+
+            dest_path = out_dir / f"{src_path.stem}_r{r}_c{c}.png"
+            img.crop(box).save(dest_path, format="PNG")
+            tiles_kept += 1
+
+            records.append({
+                "image_path": str(dest_path),
+                **base,
+                "tile_row": r,
+                "tile_col": c,
+                "tissue_fraction": fraction,
+            })
 
 
 # ============================================================
@@ -123,6 +186,8 @@ for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
 # ============================================================
 
 preprocessed_df = pd.DataFrame(records)
+
+preprocessed_df["folder"] = preprocessed_df["folder"].astype("Int64")
 
 preprocessed_df.to_csv(OUTPUT_CSV, index=False)
 
@@ -135,30 +200,44 @@ print("\n========================================")
 print("PREPROCESSING COMPLETE")
 print("========================================")
 
-print(f"\nTotal processed: {len(records)}")
-print(f"Already {TARGET_SIZE[0]}x{TARGET_SIZE[1]}: {skipped_count}")
-print(f"Resized to {TARGET_SIZE[0]}x{TARGET_SIZE[1]}: {resized_count}")
+print("\nOriginal size distribution:")
+for (w, h), count in original_sizes.most_common():
+    print(f"  {w}x{h}: {count} images")
+
+print(f"\nPatches copied as-is: {copied_count}")
+print(f"Tiles kept:           {tiles_kept}")
+print(f"Tiles discarded (<{MIN_TISSUE_FRACTION:.0%} tissue): {tiles_discarded}")
+print(f"Total output images:  {len(preprocessed_df)}")
 
 print(f"\nOutput directory: {OUTPUT_DIR}")
 print(f"Output CSV:       {OUTPUT_CSV}")
 
-print("\nPer-split counts:")
-for split in ["train", "validation", "test"]:
-    count = sum(1 for r in records if r["split"] == split)
-    print(f"  {split}: {count}")
-
-print("\nPer-class counts:")
-for cls in sorted(set(r["class"] for r in records)):
-    count = sum(1 for r in records if r["class"] == cls)
-    print(f"  {cls}: {count}")
-
-print("\nImages that were resized (by original size):")
-resized_records = [r for r in records if r["original_width"] != TARGET_SIZE[0] or r["original_height"] != TARGET_SIZE[1]]
-resize_counter = Counter(
-    (r["original_width"], r["original_height"]) for r in resized_records
+print("\nClass × Split:")
+print(
+    pd.crosstab(
+        preprocessed_df["class"],
+        preprocessed_df["split"],
+        margins=True
+    )
 )
-for (w, h), count in resize_counter.most_common():
-    print(f"  {w}x{h} -> {TARGET_SIZE[0]}x{TARGET_SIZE[1]}: {count} images")
+
+# Every source image must map to exactly one split
+leaks = preprocessed_df.groupby("original_path")["split"].nunique()
+leaks = leaks[leaks > 1]
+
+if len(leaks) == 0:
+    print("\nNo source image appears in more than one split.")
+else:
+    print(f"\nWARNING: {len(leaks)} source images appear in multiple splits!")
+
+normal_sources = df[df["class"] == "Normal"]["image_path"]
+kept_sources = set(preprocessed_df["original_path"])
+dropped_sources = [p for p in normal_sources if p not in kept_sources]
+
+if dropped_sources:
+    print(f"\nNormal images with no tile kept: {len(dropped_sources)}")
+    for p in dropped_sources:
+        print(f"  {Path(p).name}")
 
 
 # ============================================================
@@ -179,7 +258,7 @@ for _, row in preprocessed_df.sample(min(50, len(preprocessed_df)), random_state
         continue
 
     with Image.open(path) as img:
-        if img.size != TARGET_SIZE:
+        if img.size != (TILE_SIZE, TILE_SIZE):
             print(f"  WRONG SIZE: {path} is {img.size}")
             verify_errors += 1
 

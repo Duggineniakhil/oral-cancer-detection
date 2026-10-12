@@ -79,6 +79,11 @@ d2_df = pd.DataFrame({
     "source": "Dataset2_Normal"
 })
 
+# Magnification from filename, e.g. Normal_100x_12.jpg -> 100x
+d2_df["magnification"] = [
+    p.name.split("_")[1] for p in d2_images
+]
+
 # Dataset 2 split will be decided later
 d2_df["split"] = "unassigned"
 
@@ -87,13 +92,17 @@ d2_df["split"] = "unassigned"
 # COMBINE
 # ============================================================
 
+# "folder" is the NDB-UFES cross-validation fold (1-5 train, 6 test),
+# created by StratifiedKFold over patches. It is NOT a patient ID.
 master_df = pd.concat(
     [
-        d1_df[["image_path", "class", "source", "split"]],
-        d2_df[["image_path", "class", "source", "split"]]
+        d1_df[["image_path", "class", "source", "split", "folder"]],
+        d2_df[["image_path", "class", "source", "split", "magnification"]]
     ],
     ignore_index=True
 )
+
+master_df["folder"] = master_df["folder"].astype("Int64")
 
 
 # ============================================================

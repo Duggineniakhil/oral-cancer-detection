@@ -1,12 +1,12 @@
 # ============================================================
-# DATASETS
+# DATASETS (stored locally, never committed)
 # ============================================================
 
 datasets/
 dataset_1_ndb_ufes/
 dataset_2_normal/
 
-# Raw image folders
+# Image files anywhere in the repo
 **/images/
 **/*.png
 **/*.jpg
@@ -16,13 +16,40 @@ dataset_2_normal/
 **/*.bmp
 
 # ============================================================
-# GENERATED DATA
+# GENERATED DATA (re-create by running the scripts)
 # ============================================================
 
+master_dataset.csv
+splits/
+preprocessed/
+segmentation_subset_40/
+annotation/
 outputs/
 processed/
 masks/
 rois/
+
+# ============================================================
+# MODELS & WEIGHTS
+# ============================================================
+
+MedSAM/
+medsam_hf/
+owlv2/
+
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.h5
+*.bin
+*.safetensors
+*.part
+
+# Medical volumes / demo media from model downloads
+*.nii
+*.nii.gz
+*.mp4
 
 # ============================================================
 # PYTHON
@@ -37,49 +64,19 @@ venv/
 .venv/
 env/
 
-# ============================================================
-# JUPYTER
-# ============================================================
-
+# Jupyter
 .ipynb_checkpoints/
 
 # ============================================================
-# IDE
+# IDE / OS / TEMP
 # ============================================================
 
 .vscode/
 .idea/
-
-# ============================================================
-# MODEL WEIGHTS
-# ============================================================
-
-*.pth
-*.pt
-*.ckpt
-*.onnx
-*.h5
-
-# ============================================================
-# OS FILES
-# ============================================================
+.claude/settings.local.json
 
 .DS_Store
 Thumbs.db
-# Generated dataset files
-master_dataset.csv
-splits/
 
-# Temporary Office files
 ~$*
 *.tmp
-
-# ============================================================
-# MODELS & GENERATED SUBSETS
-# ============================================================
-medsam_hf/
-owlv2/
-MedSAM/
-preprocessed/
-segmentation_subset_40/
-*.bin
