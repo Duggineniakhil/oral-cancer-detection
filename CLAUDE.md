@@ -78,6 +78,6 @@ Pipeline order:
 
 ## Working agreements with the user
 
-- **Git:** commit when asked. **Push only when explicitly asked.** End commit messages with the Co-Authored-By line given by the harness.
+- **Git:** commit when asked. **Push only when explicitly asked.** Commits are authored by the user: **never add `Co-Authored-By: Claude` or any AI attribution** to commit messages or PR descriptions.
 - **Compute:** ask before running anything heavy on the laptop. Quick checks are fine (smoke tests, Grad-CAM on a few images).
 - **Licensing:** both datasets are CC BY 4.0. Credit both when showing images.
