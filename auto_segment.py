@@ -223,15 +223,17 @@ def main(args):
             return_tensors="pt"
         ).to(device)
 
-        with torch.no_grad():
+        # fp16 on GPU halves memory; SAM's 1024x1024 attention needs
+        # ~0.8 GB per image in fp32 for one intermediate tensor alone
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16, enabled=(device == "cuda")):
             outputs = model(**inputs, multimask_output=False)
 
         masks = processor.image_processor.post_process_masks(
-            outputs.pred_masks.cpu(),
+            outputs.pred_masks.float().cpu(),
             inputs["original_sizes"].cpu(),
             inputs["reshaped_input_sizes"].cpu()
         )
-        ious = outputs.iou_scores.cpu().numpy().reshape(len(images))
+        ious = outputs.iou_scores.float().cpu().numpy().reshape(len(images))
 
         for (_, row), rgb, box, mask_t, iou in zip(rows.iterrows(), images, boxes, masks, ious):
 
@@ -302,7 +304,8 @@ if __name__ == "__main__":
     parser.add_argument("--csv", default=DEFAULT_CSV, help="Input CSV (relative to the data root)")
     parser.add_argument("--splits", nargs="+", help="Only these splits, e.g. --splits train validation")
     parser.add_argument("--per-class", type=int, help="Random sample of N images per class (for testing)")
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=2,
+                        help="Images per GPU batch (2 fits a 16 GB T4 comfortably)")
     parser.add_argument("--vis-per-class", type=int, default=5, help="Visualizations saved per class")
     parser.add_argument("--resume", action="store_true", help="Skip images already in the results CSV")
 
