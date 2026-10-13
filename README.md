@@ -164,9 +164,11 @@ oral-cancer-detection/
 ├── prepare_annotation_set.py # Build a set of images for manual mask annotation
 ├── select_subset.py          # Pick a diverse 40-image subset for segmentation trials
 ├── auto_segment.py           # MedSAM mask (label-free box prompt) → ROI
+├── train_classifier.py       # ConvNeXt-Tiny training and test evaluation
 │
 ├── kaggle/
 │   ├── medsam_segmentation.ipynb # Run segmentation on a Kaggle GPU
+│   ├── convnext_training.ipynb   # Train/evaluate ConvNeXt-Tiny on a Kaggle GPU
 │   └── make_upload_zip.py        # Package data for a private Kaggle Dataset
 │
 ├── dataset_1_ndb_ufes/       # local only, ignored by Git
@@ -198,10 +200,14 @@ oral-cancer-detection/
 - [x] Train/validation/test splitting (official NDB-UFES folds)
 - [x] Preprocessing (Normal images tiled to match NDB-UFES scale)
 - [x] Macenko stain normalisation
-- [ ] MedSAM segmentation implementation
-- [ ] Exact lesion ROI extraction
-- [ ] ConvNeXt-Tiny classification
+- [x] MedSAM segmentation implementation (see finding below)
+- [x] ROI extraction
+- [ ] ConvNeXt-Tiny classification (training script ready)
 - [ ] Model evaluation
+
+### Segmentation finding
+
+MedSAM was run on all 6,626 patches with a label-free box prompt (the extent of the stained tissue). The predicted masks covered a median of **95–98% of each patch** in every class, and almost all ROIs were the full 512 × 512 patch; MedSAM's own predicted IoU was ~0.65 for all classes. NDB-UFES patches are already cropped from within the lesion, so there is no separate lesion region for a promptable segmenter to isolate. Classification is therefore performed on **whole patches**, with Grad-CAM planned for visual localisation. A dedicated epithelium segmentation model (requiring manual annotations) remains possible future work.
 
 ### Future Work
 - [ ] End-to-end pipeline integration

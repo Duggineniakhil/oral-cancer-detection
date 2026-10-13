@@ -27,6 +27,7 @@ segmentation_subset_40/
 segmentation_subset/
 segmentation/
 kaggle_upload/
+runs/
 annotation/
 outputs/
 processed/
