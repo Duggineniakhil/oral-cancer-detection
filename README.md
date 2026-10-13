@@ -165,6 +165,7 @@ oral-cancer-detection/
 ├── select_subset.py          # Pick a diverse 40-image subset for segmentation trials
 ├── auto_segment.py           # MedSAM mask (label-free box prompt) → ROI
 ├── train_classifier.py       # ConvNeXt-Tiny training and test evaluation
+├── gradcam.py                # Grad-CAM heatmaps + border-focus check
 │
 ├── kaggle/
 │   ├── medsam_segmentation.ipynb # Run segmentation on a Kaggle GPU
