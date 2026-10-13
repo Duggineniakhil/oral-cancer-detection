@@ -1,262 +1,312 @@
-# Deep Learning-Based Oral Carcinoma Lesion Segmentation and Classification
+# Oral Carcinoma Histopathology: Segmentation & Classification
 
-## Project Overview
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
+![Hugging Face](https://img.shields.io/badge/MedSAM-Hugging%20Face-FFD21E?logo=huggingface&logoColor=black)
+![Kaggle](https://img.shields.io/badge/GPU-Kaggle%20T4-20BEFF?logo=kaggle&logoColor=white)
 
-This project develops a deep learning pipeline for **multi-class classification of oral carcinoma and related histopathological conditions**.
+Deep-learning pipeline for **four-class classification of oral histopathology patches**: oral squamous cell carcinoma (OSCC), leukoplakia with dysplasia, leukoplakia without dysplasia, and normal mucosa. It also investigates whether **MedSAM lesion segmentation** before classification helps.
 
-The proposed pipeline first identifies the relevant lesion region using **MedSAM** and then performs classification using **ConvNeXt-Tiny** on the extracted lesion ROI.
-
-### Pipeline
-
-```text
-Histopathology Image
-        ↓
-Preprocessing
-        ↓
-MedSAM Segmentation
-        ↓
-Segmentation Mask
-        ↓
-Exact Lesion ROI Extraction
-        ↓
-ConvNeXt-Tiny
-        ↓
-4-Class Prediction
-```
-
-The key design principle is:
-**Localize the lesion → Extract the exact lesion ROI → Classify the ROI**
-
-### Research Objective
-
-The objective is to investigate whether explicitly localizing the relevant lesion region before classification can provide a more focused input for multi-class histopathological classification.
-
-Instead of classifying the complete image directly, the classifier receives the exact lesion region extracted using the predicted MedSAM mask.
+> **Research question:** does localising the lesion with MedSAM before classifying it with ConvNeXt-Tiny give the classifier a better input than the whole patch?
 
 ---
 
-## Classes
+## Key results
 
-The current classification task contains four classes:
-
-| Class | Description |
+| | Result |
 |---|---|
-| **OSCC** | Oral Squamous Cell Carcinoma |
-| **Leukoplakia with dysplasia** | Leukoplakia showing dysplastic changes |
-| **Leukoplakia without dysplasia** | Leukoplakia without dysplastic changes |
-| **Normal** | Normal oral histopathological tissue |
+| **4-class ConvNeXt-Tiny** (test, n = 1,049) | **92.8% balanced accuracy · 92.5% macro-F1 · 0.982 macro AUC** |
+| NDB-UFES classes within the 4-class model | 91.1% balanced accuracy (published DenseNet-121 benchmark: 91.9%) |
+| **MedSAM segmentation** (all 6,626 patches) | Masks cover a median **95–98%** of each patch, so the ROI is the whole patch |
+| Explainability | Grad-CAM shows **Normal** is recognised from a global image property, a likely dataset shortcut |
+
+These are results from a single training run per setting. See [Limitations](#limitations).
+
+---
+
+## Contents
+
+1. [Pipeline](#pipeline)
+2. [Datasets](#datasets)
+3. [Preprocessing](#preprocessing)
+4. [Segmentation (MedSAM)](#segmentation-medsam)
+5. [Classification (ConvNeXt-Tiny)](#classification-convnext-tiny)
+6. [Explainability (Grad-CAM)](#explainability-grad-cam)
+7. [Limitations](#limitations)
+8. [Project structure](#project-structure)
+9. [Getting started](#getting-started)
+10. [Project status](#project-status)
+11. [References](#references)
+
+---
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    A[NDB-UFES patches<br/>+ Normal images] --> B[Splits<br/>official folds]
+    B --> C[Tiling<br/>512×512 + tissue filter]
+    C --> D[Macenko stain<br/>normalisation]
+    D --> E[MedSAM<br/>segmentation]
+    E -. "masks ≈ whole patch" .-> F[ConvNeXt-Tiny<br/>4-class]
+    D --> F
+    F --> G[Evaluation<br/>+ Grad-CAM]
+```
+
+MedSAM was implemented and run on the full dataset. Its masks covered almost the entire patch, so the classifier is trained on **whole patches**; see [Segmentation](#segmentation-medsam).
 
 ---
 
 ## Datasets
 
-The project combines two publicly available histopathological datasets.
-
-### Dataset 1 — NDB-UFES Oral Cancer and Leukoplakia Dataset
-- **3,763** histopathological image patches
-- **Image size:** 512 × 512
-- **Classes:**
-  - OSCC: 1,126
-  - Leukoplakia with dysplasia: 1,930
-  - Leukoplakia without dysplasia: 707
-
-### Dataset 2 — Histopathological Imaging Database for Oral Cancer Analysis
-The original repository contains 1,224 images. For this project, only the 290 **Normal** histopathological images are used:
-- 100× magnification: 89
-- 400× magnification: 201
-- **Total Normal images:** 290
-
-Both datasets were captured with a Leica ICC50 HD camera at 2048 × 1536 using 10× / 40× objectives. NDB-UFES patches are 512 × 512 crops of those images, so the Normal images are **tiled** into 512 × 512 crops (not resized) to keep the same magnification. Tiles with less than 60% tissue are discarded, matching the curation of the NDB-UFES patches. Tissue is detected using optical density relative to each image's own background colour.
-
-### Combined Dataset (after preprocessing)
-
-| Class | Images |
-|---|---|
-| OSCC | 1,126 |
-| Leukoplakia with dysplasia | 1,930 |
-| Leukoplakia without dysplasia | 707 |
-| Normal | 2,863 tiles (from 290 images) |
-| **Total** | **6,626** |
-
-*The datasets are stored locally and are not included in this repository.*
-
-### Data Split
-
-Generated by `create_splits.py` and `preprocess.py`:
-
-| Split | NDB-UFES | Normal (images → tiles) | Total |
+| Dataset | Used for | Images | Licence |
 |---|---|---|---|
-| Training | 2,509 (folds 1–4) | 202 → 2,001 | 4,510 |
+| **NDB-UFES** (de Assis et al., 2023) | OSCC, leukoplakia with / without dysplasia | 3,763 patches (512×512) from 237 images, 69 patients | CC BY 4.0 |
+| **Histopathological imaging database for oral cancer** (Rahman et al., 2020) | Normal only | 290 images (2048×1536; 89 at 100×, 201 at 400×) → 2,863 tiles | CC BY 4.0 |
+
+Both datasets were captured with a Leica ICC50 HD camera at 2048×1536 using 10× / 40× objectives. They are stored locally and are not part of this repository.
+
+![Dataset samples](docs/images/dataset_samples.jpg)
+
+### Splits
+
+| Split | NDB-UFES | Normal (source images → tiles) | Total |
+|---|---|---|---|
+| Train | 2,509 (folds 1–4) | 202 → 2,001 | 4,510 |
 | Validation | 627 (fold 5) | 44 → 440 | 1,067 |
-| Test | 627 (fold 6) | 44 → 422 | 1,049 |
+| Test | 627 (fold 6, official test set) | 44 → 422 | 1,049 |
 
-- **NDB-UFES** uses the official folds shipped with the dataset (`folder` column): fold 6 is the official test set, and fold 5 is held out for validation. This keeps results comparable with published work (e.g. Maia et al., 2024).
-- **Normal** is split at the image level (stratified by magnification) *before* tiling, so all tiles of one image stay in the same split.
-
-> **Known limitations:**
-> - The official NDB-UFES folds were created with `StratifiedKFold` over patches, not patients. Patches from the same patient can therefore appear in both training and test sets, which may inflate scores. Patient-level grouping is not possible with the published patch metadata.
-> - The Normal class comes from a different institution with a different staining and white balance (NDB-UFES appears pink, the Normal images blue-purple). A classifier can partly separate Normal by colour alone, so stain normalisation and colour augmentation are needed. Per-class results for Normal should be interpreted with care.
+- **NDB-UFES** keeps the dataset's official folds, so results are comparable with published work.
+- **Normal** images are split at the image level *before* tiling, so all tiles of one image stay in the same split.
 
 ---
 
-## Model Architecture
+## Preprocessing
 
-### 1. MedSAM — Lesion Segmentation
-MedSAM is used to identify the relevant lesion region in the input histopathological image. The predicted segmentation mask is used to determine the lesion region.
+![Preprocessing](docs/images/preprocessing.jpg)
 
-### 2. Exact Lesion ROI Extraction
-The predicted MedSAM mask is used to extract the corresponding lesion region from the original image. This exact extracted ROI becomes the input to the classification model.
+1. **Tiling instead of resizing.** NDB-UFES patches are native-resolution 512×512 crops. Resizing the 2048×1536 Normal images to 512 would shrink cells about 4× and give the classifier a scale shortcut, so they are cut into 512×512 tiles instead.
+2. **Tissue filter.** Tiles with less than 60% tissue are discarded, matching the curation of NDB-UFES. Tissue is detected by optical density relative to each image's own background colour, which is robust to the strong colour casts in the Normal images.
+3. **Macenko stain normalisation.** All images are mapped to one H&E appearance. The reference is fitted on 200 NDB-UFES **training** patches only.
 
-### 3. ConvNeXt-Tiny — Classification
-ConvNeXt-Tiny performs four-class classification on the extracted lesion ROI. The model produces class logits followed by a softmax probability distribution:
+**Colour-bias check.** A logistic regression that sees *only colour histograms* tries to identify the class:
 
-```text
-Lesion ROI
-    ↓
-ConvNeXt-Tiny
-    ↓
-Logits
-    ↓
-Softmax
-    ↓
-OSCC / With Dysplasia / Without Dysplasia / Normal
-```
+| | 4-class balanced accuracy | Normal-vs-rest AUC |
+|---|---|---|
+| Before normalisation | 0.666 | 0.999 |
+| After normalisation | 0.630 | 0.974 |
 
-### Mathematical Formulation
-
-For an input lesion ROI \(x\), ConvNeXt-Tiny produces:
-
-$$ \mathbf{z} = f_{\theta}(x) $$
-
-The predicted class probabilities are:
-
-$$ \hat{\mathbf{y}} = \operatorname{softmax}(\mathbf{z}) $$
-
-The classification objective uses categorical cross-entropy:
-
-$$ \mathcal{L}_{cls} = -\sum_{c=1}^{4} y_c \log(\hat{y}_c) $$
-
-The model parameters are optimized by minimizing the average classification loss:
-
-$$ \theta^{*} = \arg\min_{\theta} \frac{1}{N} \sum_{i=1}^{N} \mathcal{L}_{cls}^{(i)} $$
+Normalisation removes the hue difference, but a colour/dataset signal remains. It is investigated further in [Explainability](#explainability-grad-cam).
 
 ---
 
-## Repository Structure
+## Segmentation (MedSAM)
+
+MedSAM (ViT-B) was run on **all 6,626 patches** on a Kaggle T4 GPU (~40 min). Each patch received a **label-free** box prompt covering the stained tissue, so the same procedure applies at inference time.
+
+![MedSAM mask coverage](docs/images/segmentation_mask_coverage.png)
+
+![MedSAM examples](docs/images/segmentation_examples.jpg)
+
+*Columns: box prompt · MedSAM mask · ROI crop. Examples from the Kaggle run, one per class (OSCC, with dysplasia, without dysplasia, Normal).*
+
+**Finding.** The masks cover a median of 95–98% of each patch in every class. Almost all ROIs are the full 512×512 patch, and MedSAM's own predicted IoU is about 0.65 for every class.
+
+**Why.** NDB-UFES patches are already cropped from *inside* the lesion, so there is no separate lesion region for a promptable segmenter to isolate. Classification therefore uses **whole patches**.
+
+A meaningful segmentation target for this data would be the **epithelium**, where dysplasia is graded. That requires manual annotations and is listed as future work.
+
+---
+
+## Classification (ConvNeXt-Tiny)
+
+**Setup**
+- **Model:** ConvNeXt-Tiny, ImageNet-pretrained, with a new 4-class head. Input is 224×224, resized from 512.
+- **Augmentation:** flips, 90° rotations, random resized crops, and strong colour jitter.
+- **Training:** AdamW (lr 1e-4, weight decay 0.05), OneCycle schedule, mixed precision, batch size 32, up to 25 epochs.
+- **Imbalance:** class-weighted cross-entropy with label smoothing 0.1.
+- **Model selection:** best validation macro-F1, with early stopping (patience 6). The test set is evaluated **once** with the selected checkpoint.
+
+### Results (test set)
+
+| Run | Accuracy | Balanced acc. | Macro-F1 | Macro AUC |
+|---|---|---|---|---|
+| **4-class** | **94.2%** | **92.8%** | **92.5%** | **0.982** |
+| 4-class, greyscale input | 92.5% | 91.2% | 90.4% | 0.981 |
+| 3-class (NDB-UFES only) | 89.6% | 88.3% | 89.0% | 0.972 |
+
+**Comparison with published work.** On the NDB-UFES test patches, the 4-class model reaches **91.1%** balanced accuracy, against **91.9%** for DenseNet-121 in Maia et al. (2024) on the same folds. The separate 3-class run (88.3%) stopped early and its validation scores fluctuated. With one run per setting, differences of 2–3 points are within run-to-run variation.
+
+![Confusion matrix](docs/images/confusion_matrix.png)
+
+Errors are almost entirely between **adjacent grades** (OSCC ↔ with dysplasia, with ↔ without dysplasia), and OSCC is never predicted as non-dysplastic. "Without dysplasia" is the hardest class, consistent with the literature.
+
+![Training curves](docs/images/training_curves.png)
+
+![Per-class F1](docs/images/per_class_f1.png)
+
+---
+
+## Explainability (Grad-CAM)
+
+![Grad-CAM examples](docs/images/gradcam_examples.jpg)
+
+For the NDB-UFES classes, heatmaps highlight tissue regions such as cell-dense areas and atypical nuclei. For **Normal**, the strongest activation often lies at the patch edge. A border-focus check over **all** 1,049 test images quantifies this:
+
+![Grad-CAM border check](docs/images/gradcam_border_check.png)
+
+- **NDB-UFES classes:** heatmaps are spread about as evenly as chance (49–54% of the heatmap on the border).
+- **Normal:** two thirds of the heatmap lies on the border, and the peak is on the border in 71–78% of images.
+- Tiles from the edge and from the interior of the source image behave the same, which **rules out** lighting or edge artefacts of the original microscope images.
+
+**Interpretation.** Normal is most likely recognised from a **global image property**, such as sharpness, texture or scale, rather than from localised tissue features. This is consistent with Normal staying at ~99% F1 in greyscale. The Normal-class result should therefore be read as an upper bound affected by the cross-dataset design, not as evidence that the model recognises normal tissue.
+
+---
+
+## Limitations
+
+- **Patch-level folds.** The official NDB-UFES folds were created by stratified K-fold over *patches*, not patients. Patches from the same patient can appear in training and test, so all NDB-UFES results, including published ones, are likely optimistic.
+- **Cross-dataset Normal class.** Normal comes from a different institution. Despite tiling, stain normalisation and colour augmentation, Grad-CAM indicates a dataset shortcut.
+- **Single runs.** Each setting was trained once; results should be reported as mean ± SD over several seeds.
+- **No ground-truth masks.** Segmentation quality (Dice/IoU) cannot be measured without reference annotations.
+
+---
+
+## Project structure
 
 ```text
 oral-cancer-detection/
-│
 ├── README.md
-├── .gitignore
+├── CLAUDE.md                       # Guide for AI-assisted development
 ├── requirements.txt
-├── config.py                 # Shared paths (laptop / Kaggle)
 │
-├── check_dataset.py          # Verify raw dataset counts
-├── create_master_dataset.py  # Combine datasets into one CSV (keeps NDB-UFES folds)
-├── create_splits.py          # Official NDB-UFES folds + image-level Normal split
-├── inspect_images.py         # Check for corrupted images
-├── inspect_samples.py        # Per-class sample grid
-├── visualize_dataset.py      # One sample per class
-├── preprocess.py             # Copy 512×512 patches, tile Normal images
-├── stain_normalize.py        # Macenko stain normalisation (reference: NDB-UFES train)
-├── check_color_shortcut.py   # Colour-only classifier to measure dataset colour bias
-├── prepare_annotation_set.py # Build a set of images for manual mask annotation
-├── select_subset.py          # Pick a diverse 40-image subset for segmentation trials
-├── auto_segment.py           # MedSAM mask (label-free box prompt) → ROI
-├── train_classifier.py       # ConvNeXt-Tiny training and test evaluation
-├── gradcam.py                # Grad-CAM heatmaps + border-focus check
+├── oral_cancer/                    # Shared package
+│   └── config.py                   # DATA_ROOT / OUTPUT_ROOT, relative CSV paths
 │
-├── kaggle/
-│   ├── medsam_segmentation.ipynb # Run segmentation on a Kaggle GPU
-│   ├── convnext_training.ipynb   # Train/evaluate ConvNeXt-Tiny on a Kaggle GPU
-│   └── make_upload_zip.py        # Package data for a private Kaggle Dataset
+├── scripts/
+│   ├── data/                       # Dataset construction & preprocessing
+│   │   ├── check_dataset.py
+│   │   ├── create_master_dataset.py
+│   │   ├── create_splits.py
+│   │   ├── preprocess.py           # Tiling + tissue filter
+│   │   ├── stain_normalize.py      # Macenko normalisation
+│   │   └── make_kaggle_upload.py   # Zip data for a Kaggle Dataset
+│   ├── analysis/                   # Data inspection & bias checks
+│   │   ├── inspect_images.py
+│   │   ├── inspect_samples.py
+│   │   ├── visualize_dataset.py
+│   │   └── check_color_shortcut.py
+│   ├── segmentation/               # MedSAM
+│   │   ├── auto_segment.py
+│   │   ├── select_subset.py
+│   │   └── prepare_annotation_set.py
+│   ├── classification/             # ConvNeXt-Tiny
+│   │   ├── train_classifier.py
+│   │   └── gradcam.py
+│   └── reporting/
+│       └── make_readme_figures.py  # Generates docs/images/
 │
-├── dataset_1_ndb_ufes/       # local only, ignored by Git
-├── dataset_2_normal/         # local only, ignored by Git
+├── notebooks/                      # Kaggle GPU notebooks
+│   ├── medsam_segmentation_kaggle.ipynb
+│   └── convnext_training_kaggle.ipynb
 │
-├── splits/                   # generated locally, ignored by Git
-├── preprocessed/             # generated locally, ignored by Git
-├── preprocessed_normalized/  # generated locally, ignored by Git
-├── outputs/                  # generated results, ignored by Git
-└── master_dataset.csv        # generated locally, ignored by Git
+└── docs/
+    └── images/                     # Figures used in this README
+
+# Local only (git-ignored): dataset_1_ndb_ufes/, dataset_2_normal/, splits/,
+# preprocessed/, preprocessed_normalized/, segmentation/, runs/, outputs/
 ```
 
-*The actual datasets, generated CSV files, model weights, and experiment outputs are intentionally excluded from GitHub.*
-
 ---
 
-## Current Status
+## Getting started
 
-### Phase 1 — Completed
-- [x] Literature survey
-- [x] Research gap identification
-- [x] Dataset investigation
-- [x] Proposed architecture
-- [x] Pipeline redesign
-
-### Phase 2 — In Progress
-- [x] Dataset preparation
-- [x] Four-class dataset construction
-- [x] Train/validation/test splitting (official NDB-UFES folds)
-- [x] Preprocessing (Normal images tiled to match NDB-UFES scale)
-- [x] Macenko stain normalisation
-- [x] MedSAM segmentation implementation (see finding below)
-- [x] ROI extraction
-- [ ] ConvNeXt-Tiny classification (training script ready)
-- [ ] Model evaluation
-
-### Segmentation finding
-
-MedSAM was run on all 6,626 patches with a label-free box prompt (the extent of the stained tissue). The predicted masks covered a median of **95–98% of each patch** in every class, and almost all ROIs were the full 512 × 512 patch; MedSAM's own predicted IoU was ~0.65 for all classes. NDB-UFES patches are already cropped from within the lesion, so there is no separate lesion region for a promptable segmenter to isolate. Classification is therefore performed on **whole patches**, with Grad-CAM planned for visual localisation. A dedicated epithelium segmentation model (requiring manual annotations) remains possible future work.
-
-### Future Work
-- [ ] End-to-end pipeline integration
-- [ ] Quantitative classification evaluation
-- [ ] Segmentation evaluation where appropriate ground-truth masks are available
-- [ ] Ablation studies
-- [ ] Deployment and inference pipeline
-
-> **Important Evaluation Note:** MedSAM can generate segmentation masks, but quantitative segmentation metrics such as Dice and IoU require appropriate ground-truth segmentation annotations. Therefore, segmentation performance will only be reported quantitatively when suitable reference masks are available.
-
----
-
-## Running the Code
+### Install
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Data preparation (laptop), in order:
+### Data layout
 
-```bash
-python create_master_dataset.py
-python create_splits.py
-python preprocess.py
-python stain_normalize.py
+```text
+dataset_1_ndb_ufes/
+├── images/              # p0000.png ... (NDB-UFES patches)
+└── metadata/            # sabpatch_parsed_folders.csv, sabpatch_parsed_test.csv
+dataset_2_normal/
+└── images/              # Normal_100x_*.jpg, Normal_400x_*.jpg
 ```
 
-All scripts read and write relative to the project folder by default. To use other locations, set `ORAL_CANCER_DATA_ROOT` (inputs) and `ORAL_CANCER_OUTPUT_ROOT` (outputs). Paths inside the CSV files are relative, so the CSVs work on any machine.
+### Run the pipeline
 
-### Segmentation on Kaggle (GPU)
+All scripts are run **as modules from the project root**:
 
-MedSAM is slow on a laptop CPU, so the full segmentation runs on Kaggle:
+```bash
+# 1. Data
+python -m scripts.data.create_master_dataset
+python -m scripts.data.create_splits
+python -m scripts.data.preprocess
+python -m scripts.data.stain_normalize
 
-1. `python kaggle/make_upload_zip.py` creates `kaggle_upload/oral-cancer-data.zip` (`splits/` + `preprocessed_normalized/`).
-2. Upload it as a **private** Kaggle Dataset. The Normal images are CC BY-NC-ND, so modified versions must not be shared publicly.
-3. Import `kaggle/medsam_segmentation.ipynb` into Kaggle, add the dataset as input, enable GPU and Internet, and follow the steps in the notebook.
-4. Download `segmentation.zip` and unzip it into the project folder.
+# 2. Bias check (optional)
+python -m scripts.analysis.check_color_shortcut
 
-## Technologies
-- **Python**, **PyTorch**, **Hugging Face Transformers**
-- **MedSAM**, **ConvNeXt-Tiny**
-- **NumPy**, **Pandas**, **scikit-learn**
+# 3. Segmentation and classification: GPU recommended (see Kaggle below)
+python -m scripts.segmentation.auto_segment
+python -m scripts.classification.train_classifier --classes 4
 
-## Team Members
+# 4. Explainability and figures
+python -m scripts.classification.gradcam
+python -m scripts.classification.gradcam --border-check
+python -m scripts.reporting.make_readme_figures
+```
+
+Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` (inputs) and `ORAL_CANCER_OUTPUT_ROOT` (outputs). Paths inside CSV files are relative, so the CSVs work on any machine.
+
+### Running on Kaggle (GPU)
+
+1. `python -m scripts.data.make_kaggle_upload` creates `kaggle_upload/oral-cancer-data.zip` containing `splits/` and `preprocessed_normalized/`.
+2. Upload it as a Kaggle Dataset. Private is recommended; both sources are CC BY 4.0, so credit them if you share it.
+3. Import a notebook from `notebooks/`, add the dataset as input, and enable **GPU T4** and **Internet**.
+4. Use **Save Version → Save & Run All**, then download the outputs (`segmentation.zip` / `runs.zip`).
+
+---
+
+## Project status
+
+| Phase | Status |
+|---|---|
+| Literature survey, dataset investigation, architecture | ✅ Done |
+| Dataset construction, official splits, tiling, stain normalisation | ✅ Done |
+| Colour-bias analysis | ✅ Done |
+| MedSAM segmentation (full dataset) | ✅ Done (no localisation benefit on these patches) |
+| ConvNeXt-Tiny 4-class / 3-class / greyscale | ✅ Done (single seed) |
+| Grad-CAM + border-focus check | ✅ Done |
+| Identify and mitigate the Normal shortcut (e.g. sharpness matching) | ⏳ Next |
+| Multi-seed runs (mean ± SD), 384 px experiment | ⏳ Planned |
+| Final report / paper write-up | ⏳ Planned |
+| Inference script / demo | ⏳ Planned |
+| Epithelium segmentation with manual annotations | 💡 Optional |
+
+---
+
+## References
+
+1. de Assis, M. C. F. R. et al. *NDB-UFES: An oral cancer and leukoplakia dataset composed of histopathological images and patient data.* Data in Brief 48, 109128 (2023). [Data](https://data.mendeley.com/datasets/bbmmm4wgr8/4)
+2. Rahman, T. Y. et al. *Histopathological imaging database for oral cancer analysis.* Data in Brief 29, 105114 (2020). [Data](https://data.mendeley.com/datasets/ftmp4cvtmb/2)
+3. Maia, B. M. S. et al. *Transformers, convolutional neural networks, and few-shot learning for classification of histopathological images of oral cancer.* Expert Systems with Applications 241, 122418 (2024).
+4. Ma, J. et al. *Segment anything in medical images (MedSAM).* Nature Communications 15, 654 (2024).
+5. Liu, Z. et al. *A ConvNet for the 2020s (ConvNeXt).* CVPR (2022).
+6. Macenko, M. et al. *A method for normalizing histology slides for quantitative analysis.* ISBI (2009).
+7. Selvaraju, R. R. et al. *Grad-CAM: Visual explanations from deep networks via gradient-based localization.* ICCV (2017).
+
+---
+
+## Team
+
 - K. Siddhartha
 - K. Yoganand
 - D. Akhil
 - D. Akash
 
-## Guide
-- Mrs. Bharathi D
+**Guide:** Mrs. Bharathi D

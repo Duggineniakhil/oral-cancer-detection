@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 
-from config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
 
 # ============================================================
 # PATHS

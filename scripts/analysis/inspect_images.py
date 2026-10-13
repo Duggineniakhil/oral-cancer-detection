@@ -3,7 +3,7 @@ import pandas as pd
 from PIL import Image
 from collections import Counter
 
-from config import DATA_ROOT, resolve
+from oral_cancer.config import DATA_ROOT, resolve
 
 # ============================================================
 # PATHS

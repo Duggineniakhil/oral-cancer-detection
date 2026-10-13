@@ -9,7 +9,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-from config import DATA_ROOT, resolve
+from oral_cancer.config import DATA_ROOT, resolve
 
 
 # ============================================================

@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from config import DATA_ROOT, OUTPUT_ROOT
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT
 
 # ============================================================
 # PATHS

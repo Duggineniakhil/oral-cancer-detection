@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from config import DATA_ROOT, OUTPUT_ROOT, resolve
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve
 
 
 # ============================================================
@@ -71,7 +71,8 @@ for ax, class_name in zip(axes, classes):
 
 plt.tight_layout()
 
-output_path = OUTPUT_ROOT / "dataset_samples.png"
+output_path = OUTPUT_ROOT / "outputs" / "dataset_samples.png"
+output_path.parent.mkdir(parents=True, exist_ok=True)
 
 plt.savefig(
     output_path,

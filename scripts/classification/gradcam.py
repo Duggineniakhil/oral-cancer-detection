@@ -8,10 +8,9 @@ examples are not cherry-picked:
     - up to M misclassified images
 
 Usage:
-    python gradcam.py                                  # 4-class run
-    python gradcam.py --run convnext_tiny_4class_gray_224px
-    python gradcam.py --per-class 8 --errors 16
-    python gradcam.py --border-check                   # do heatmaps favour patch edges?
+    python -m scripts.classification.gradcam                     # 4-class run
+    python -m scripts.classification.gradcam --run convnext_tiny_4class_gray_224px
+    python -m scripts.classification.gradcam --border-check      # do heatmaps favour patch edges?
 
 Outputs (OUTPUT_ROOT/runs/<run>/gradcam/):
     correct_<class>.png   original + heatmap for correct predictions
@@ -33,8 +32,8 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from config import OUTPUT_ROOT, resolve
-from train_classifier import CLASSES_3, CLASSES_4, build_model, build_transforms
+from oral_cancer.config import OUTPUT_ROOT, resolve
+from scripts.classification.train_classifier import CLASSES_3, CLASSES_4, build_model, build_transforms
 
 
 # ============================================================

@@ -16,10 +16,9 @@ Outputs (under OUTPUT_ROOT/segmentation/):
     segmentation_results.csv              one row per image
 
 Usage:
-    python auto_segment.py --per-class 3          # quick test
-    python auto_segment.py --csv segmentation_subset/subset.csv
-    python auto_segment.py                        # full dataset
-    python auto_segment.py --resume               # continue after a stop
+    python -m scripts.segmentation.auto_segment --per-class 3     # quick test
+    python -m scripts.segmentation.auto_segment                   # full dataset
+    python -m scripts.segmentation.auto_segment --resume          # continue after a stop
 
 NOTE: these masks are automatic MedSAM output, not ground truth.
 Segmentation quality can only be measured against reference masks
@@ -35,7 +34,7 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-from config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
 
 
 # ============================================================

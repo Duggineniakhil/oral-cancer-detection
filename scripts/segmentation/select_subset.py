@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from config import DATA_ROOT, OUTPUT_ROOT, resolve
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve
 
 
 # ============================================================

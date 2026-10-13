@@ -6,10 +6,10 @@ is chosen on "validation" (macro-F1), and "test" is evaluated ONCE
 with that checkpoint at the end.
 
 Usage:
-    python train_classifier.py                         # 4 classes
-    python train_classifier.py --classes 3             # NDB-UFES only
-    python train_classifier.py --grayscale             # colour-shortcut check
-    python train_classifier.py --smoke-test            # tiny CPU run to check the code
+    python -m scripts.classification.train_classifier                 # 4 classes
+    python -m scripts.classification.train_classifier --classes 3     # NDB-UFES only
+    python -m scripts.classification.train_classifier --grayscale     # colour-shortcut check
+    python -m scripts.classification.train_classifier --smoke-test    # tiny CPU run
 
 Outputs (OUTPUT_ROOT/runs/<run name>/):
     best_model.pt, history.csv, curves.png, test_predictions.csv,
@@ -38,7 +38,7 @@ from sklearn.metrics import (
 from torch.utils.data import DataLoader, Dataset
 from torchvision import models, transforms
 
-from config import OUTPUT_ROOT, resolve
+from oral_cancer.config import OUTPUT_ROOT, resolve
 
 
 # ============================================================

@@ -1,6 +1,9 @@
 """
 Shared paths so the same scripts run on a laptop and on Kaggle.
 
+Scripts are run as modules from the project root, e.g.
+    python -m scripts.data.preprocess
+
 DATA_ROOT    where inputs are read from (datasets, splits/, preprocessed*/)
 OUTPUT_ROOT  where outputs are written
 
@@ -19,7 +22,7 @@ store one.
 import os
 from pathlib import Path, PurePosixPath
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 DATA_ROOT = Path(os.environ.get("ORAL_CANCER_DATA_ROOT", PROJECT_DIR))
 OUTPUT_ROOT = Path(os.environ.get("ORAL_CANCER_OUTPUT_ROOT", PROJECT_DIR))

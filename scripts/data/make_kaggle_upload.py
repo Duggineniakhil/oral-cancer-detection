@@ -1,6 +1,9 @@
 """
 Package the data needed on Kaggle into one zip for upload as a
-PRIVATE Kaggle Dataset.
+Kaggle Dataset.
+
+Run from the project root:
+    python -m scripts.data.make_kaggle_upload
 
 Contents: splits/ and preprocessed_normalized/
 Output:   kaggle_upload/oral-cancer-data.zip
@@ -11,11 +14,8 @@ re-compression (much faster, same size).
 
 import sys
 import zipfile
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from config import DATA_ROOT, OUTPUT_ROOT
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT
 
 FOLDERS = ["splits", "preprocessed_normalized"]
 
@@ -43,4 +43,4 @@ with zipfile.ZipFile(OUTPUT_ZIP, "w", compression=zipfile.ZIP_STORED) as zf:
             print(f"  {i}/{len(files)}")
 
 print(f"\nCreated: {OUTPUT_ZIP} ({OUTPUT_ZIP.stat().st_size / 2**30:.2f} GB)")
-print("Upload it at https://www.kaggle.com/datasets -> New Dataset (keep it PRIVATE).")
+print("Upload it at https://www.kaggle.com/datasets -> New Dataset.")

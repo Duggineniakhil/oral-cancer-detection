@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from config import DATA_ROOT, OUTPUT_ROOT, resolve
+from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve
 
 
 # ============================================================

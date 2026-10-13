@@ -85,3 +85,11 @@ Thumbs.db
 
 ~$*
 *.tmp
+
+# ============================================================
+# EXCEPTIONS: README figures are part of the repository
+# ============================================================
+
+!docs/images/
+!docs/images/*.png
+!docs/images/*.jpg
