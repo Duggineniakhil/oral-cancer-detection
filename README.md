@@ -18,7 +18,7 @@ Deep-learning pipeline for **four-class classification of oral histopathology pa
 | **4-class ConvNeXt-Tiny** (test, n = 1,049) | **92.8% balanced accuracy · 92.5% macro-F1 · 0.982 macro AUC** |
 | NDB-UFES classes within the 4-class model | 91.1% balanced accuracy (published DenseNet-121 benchmark: 91.9%) |
 | **MedSAM segmentation** (all 6,626 patches) | Masks cover a median **95–98%** of each patch, so the ROI is the whole patch |
-| Explainability | Grad-CAM shows **Normal** is recognised from a global image property, a likely dataset shortcut |
+| Explainability | Grad-CAM + a sharpness test show **Normal** is recognised largely from image sharpness (AUC 0.95 from one number), a dataset shortcut. It is now mitigated by sharpness matching; retraining is pending |
 
 These are results from a single training run per setting. See [Limitations](#limitations).
 
@@ -87,7 +87,8 @@ Both datasets were captured with a Leica ICC50 HD camera at 2048×1536 using 10�
 
 1. **Tiling instead of resizing.** NDB-UFES patches are native-resolution 512×512 crops. Resizing the 2048×1536 Normal images to 512 would shrink cells about 4× and give the classifier a scale shortcut, so they are cut into 512×512 tiles instead.
 2. **Tissue filter.** Tiles with less than 60% tissue are discarded, matching the curation of NDB-UFES. Tissue is detected by optical density relative to each image's own background colour, which is robust to the strong colour casts in the Normal images.
-3. **Macenko stain normalisation.** All images are mapped to one H&E appearance. The reference is fitted on 200 NDB-UFES **training** patches only.
+3. **Sharpness matching.** NDB-UFES patches are much softer than the Normal images. Normal tiles get a Gaussian blur (σ = 2.5 px at 512 px), calibrated so that sharpness no longer separates the sources (see [Explainability](#explainability-grad-cam)).
+4. **Macenko stain normalisation.** All images are mapped to one H&E appearance. The reference is fitted on 200 NDB-UFES **training** patches only.
 
 **Colour-bias check.** A logistic regression that sees *only colour histograms* tries to identify the class:
 
@@ -122,12 +123,14 @@ A meaningful segmentation target for this data would be the **epithelium**, wher
 
 **Setup**
 - **Model:** ConvNeXt-Tiny, ImageNet-pretrained, with a new 4-class head. Input is 224×224, resized from 512.
-- **Augmentation:** flips, 90° rotations, random resized crops, and strong colour jitter.
+- **Augmentation:** flips, 90° rotations, random resized crops, strong colour jitter, and random Gaussian blur (added after the sharpness finding).
 - **Training:** AdamW (lr 1e-4, weight decay 0.05), OneCycle schedule, mixed precision, batch size 32, up to 25 epochs.
 - **Imbalance:** class-weighted cross-entropy with label smoothing 0.1.
 - **Model selection:** best validation macro-F1, with early stopping (patience 6). The test set is evaluated **once** with the selected checkpoint.
 
 ### Results (test set)
+
+*Models trained **before** sharpness matching; retraining on the sharpness-matched data is pending.*
 
 | Run | Accuracy | Balanced acc. | Macro-F1 | Macro AUC |
 |---|---|---|---|---|
@@ -159,14 +162,24 @@ For the NDB-UFES classes, heatmaps highlight tissue regions such as cell-dense a
 - **Normal:** two thirds of the heatmap lies on the border, and the peak is on the border in 71–78% of images.
 - Tiles from the edge and from the interior of the source image behave the same, which **rules out** lighting or edge artefacts of the original microscope images.
 
-**Interpretation.** Normal is most likely recognised from a **global image property**, such as sharpness, texture or scale, rather than from localised tissue features. This is consistent with Normal staying at ~99% F1 in greyscale. The Normal-class result should therefore be read as an upper bound affected by the cross-dataset design, not as evidence that the model recognises normal tissue.
+**Sharpness test.** Each global image property is reduced to one number per image and used *alone* to separate Normal from the NDB-UFES classes (250 images per class, `scripts/analysis/check_sharpness.py`):
+
+| Property (one number per image) | Normal-vs-rest AUC | Median, NDB-UFES classes | Median, Normal |
+|---|---|---|---|
+| **Sharpness at 224 px** (Laplacian variance, model input) | **0.946** | 54–80 | **333** |
+| Contrast | 0.852 | 13–20 | 30 |
+| Brightness | 0.832 | 133–143 | 162 |
+
+Normal tiles are about 5× sharper. This global property explains both the border-focused Grad-CAM and Normal staying at ~99% F1 in greyscale: the earlier Normal result was largely a **dataset shortcut**.
+
+**Mitigation.** A Gaussian blur on Normal tiles was calibrated by sweeping σ. σ = 2.5 px (512 px) was chosen. On the regenerated, sharpness-matched data, the sharpness AUC at the model's 224 px input dropped from 0.95 to **0.52**. Brightness and contrast cues remain (AUC 0.76 / 0.81) and are addressed by colour/brightness augmentation. The cross-dataset Normal class therefore stays a documented limitation, and the **3-class NDB-UFES result is the primary, shortcut-free benchmark**.
 
 ---
 
 ## Limitations
 
 - **Patch-level folds.** The official NDB-UFES folds were created by stratified K-fold over *patches*, not patients. Patches from the same patient can appear in training and test, so all NDB-UFES results, including published ones, are likely optimistic.
-- **Cross-dataset Normal class.** Normal comes from a different institution. Despite tiling, stain normalisation and colour augmentation, Grad-CAM indicates a dataset shortcut.
+- **Cross-dataset Normal class.** Normal comes from a different institution. Sharpness, brightness and contrast differ between the sources. Sharpness is matched by calibrated blur; brightness and contrast are only weakened by augmentation.
 - **Single runs.** Each setting was trained once; results should be reported as mean ± SD over several seeds.
 - **No ground-truth masks.** Segmentation quality (Dice/IoU) cannot be measured without reference annotations.
 
@@ -195,7 +208,8 @@ oral-cancer-detection/
 │   │   ├── inspect_images.py
 │   │   ├── inspect_samples.py
 │   │   ├── visualize_dataset.py
-│   │   └── check_color_shortcut.py
+│   │   ├── check_color_shortcut.py
+│   │   └── check_sharpness.py      # Single-property shortcut test + blur calibration
 │   ├── segmentation/               # MedSAM
 │   │   ├── auto_segment.py
 │   │   ├── select_subset.py
@@ -282,7 +296,8 @@ Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` 
 | MedSAM segmentation (full dataset) | ✅ Done (no localisation benefit on these patches) |
 | ConvNeXt-Tiny 4-class / 3-class / greyscale | ✅ Done (single seed) |
 | Grad-CAM + border-focus check | ✅ Done |
-| Identify and mitigate the Normal shortcut (e.g. sharpness matching) | ⏳ Next |
+| Identify the Normal shortcut (sharpness) and calibrate a blur fix | ✅ Done |
+| Retrain on sharpness-matched data | ⏳ Next |
 | Multi-seed runs (mean ± SD), 384 px experiment | ⏳ Planned |
 | Final report / paper write-up | ⏳ Planned |
 | Inference script / demo | ⏳ Planned |

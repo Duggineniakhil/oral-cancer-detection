@@ -57,7 +57,9 @@ Pipeline order:
   - Colour-only AUC is 0.999 before and 0.974 after Macenko normalisation.
   - In greyscale, Normal F1 is still about 99%.
   - Grad-CAM puts about 65% of Normal heatmaps on the patch border, versus about 50% for the other classes. This happens for edge and interior tiles alike.
-  - So Normal is likely recognised from a global image property (sharpness / texture / scale suspected). Treat Normal results as optimistic.
+  - **Confirmed cause: sharpness.** Laplacian variance at 224px alone separates Normal with AUC 0.946; Normal is about 5x sharper. Brightness (0.83) and contrast (0.85) also differ.
+  - **Fix:** `preprocess.py` blurs Normal tiles (`TILE_BLUR_SIGMA = 2.5`, calibrated with `check_sharpness --calibrate-blur`), which brings the sharpness AUC to about 0.50. Training adds random blur.
+  - Treat Normal results as optimistic. The 3-class NDB-UFES result is the primary benchmark.
 - **NDB-UFES folds are patch-level**, not patient-level, so results are optimistic. This includes published benchmarks; the main one is Maia et al. 2024 with DenseNet-121 at 91.9% balanced accuracy.
 - **SAM/MedSAM at 1024px uses about 0.8 GB of GPU memory per image** in one attention tensor. Keep the batch size at 2 or less and use fp16 on a T4.
 - **Tissue detection on the Normal images needs per-image optical density.** Their glass background has strong colour casts, which break fixed colour thresholds.
@@ -72,7 +74,7 @@ Pipeline order:
 - README figures.
 
 **Next:**
-1. Test the sharpness-shortcut hypothesis (Laplacian variance as a single-feature classifier). Mitigate it if confirmed, e.g. by sharpness matching or blur augmentation, then retrain.
+1. Retrain on the sharpness-matched data (re-upload the Kaggle dataset first) and compare Normal accuracy with the pre-fix runs.
 2. Multi-seed runs (mean ± SD); a 384px experiment.
 3. Inference script / demo; final report.
 

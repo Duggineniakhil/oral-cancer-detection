@@ -186,6 +186,8 @@ def fig_preprocessing(pre, norm):
             ax.set_title(f"{label}: {title}", fontsize=9, fontweight="normal", color=TEXT_SECONDARY)
 
     fig.text(0.535, 0.97, "B. Macenko stain normalization", fontweight="bold", fontsize=12)
+    fig.text(0.535, 0.03, "Normal tiles are also blurred (σ = 2.5 px) to match NDB-UFES sharpness",
+             color=TEXT_SECONDARY, fontsize=9)
     save(fig, "preprocessing.jpg", photo=True)
 
 

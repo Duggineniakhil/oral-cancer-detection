@@ -4,7 +4,7 @@ import shutil
 
 import numpy as np
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageFilter
 from tqdm import tqdm
 
 from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
@@ -41,6 +41,13 @@ TILE_SIZE = 512
 # curated to exclude blank areas (~99% of them are >= 0.6 tissue),
 # so Normal tiles below 0.6 are discarded to match that curation.
 MIN_TISSUE_FRACTION = 0.6
+
+# Sharpness matching. NDB-UFES patches are much softer than the Normal
+# images (Laplacian sharpness at the 224 px model input separates the
+# two sources with AUC 0.95). A Gaussian blur of sigma 2.5 px at 512 px,
+# calibrated with `scripts.analysis.check_sharpness --calibrate-blur`,
+# brings that AUC to ~0.5. Applied to tiled (Normal) images only.
+TILE_BLUR_SIGMA = 2.5
 
 # Tissue detection uses optical density (OD) relative to each
 # image's own background (glass) colour. The Normal slides have
@@ -169,7 +176,10 @@ for _, row in tqdm(df.iterrows(), total=len(df), desc="Preprocessing"):
                 continue
 
             dest_path = out_dir / f"{src_path.stem}_r{r}_c{c}.png"
-            img.crop(box).save(dest_path, format="PNG")
+            tile = img.crop(box)
+            if TILE_BLUR_SIGMA > 0:
+                tile = tile.filter(ImageFilter.GaussianBlur(TILE_BLUR_SIGMA))
+            tile.save(dest_path, format="PNG")
             tiles_kept += 1
 
             records.append({

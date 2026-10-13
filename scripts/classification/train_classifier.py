@@ -97,6 +97,9 @@ def build_transforms(img_size, grayscale):
         # Strong colour augmentation so the model cannot rely on the
         # residual stain differences between the two source datasets
         transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.05),
+        # Random blur on all classes, so residual sharpness differences
+        # between the two source datasets are not a reliable cue
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 1.5))], p=0.5),
         *gray,
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
