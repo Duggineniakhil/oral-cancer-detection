@@ -28,6 +28,7 @@ segmentation_subset/
 segmentation/
 kaggle_upload/
 runs/
+runs_before_blur/
 annotation/
 outputs/
 processed/

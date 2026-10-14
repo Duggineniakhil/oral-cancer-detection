@@ -267,25 +267,32 @@ def fig_training_curves():
 # 5. CLASSIFICATION: CONFUSION MATRIX
 # ============================================================
 
-def fig_confusion_matrix():
-    preds = pd.read_csv(RUNS / MAIN_RUN / "test_predictions.csv")
-    cm = confusion_matrix(preds["class"], preds["predicted"], labels=CLASSES_4)
+def draw_confusion(ax, run, classes, title):
+    preds = pd.read_csv(RUNS / run / "test_predictions.csv")
+    cm = confusion_matrix(preds["class"], preds["predicted"], labels=classes)
     pct = cm / cm.sum(axis=1, keepdims=True) * 100
+    n = len(classes)
 
-    fig, ax = plt.subplots(figsize=(6.6, 5.6))
     ax.imshow(pct, cmap="Blues", vmin=0, vmax=100)
-    labels = [CLASS_LABELS[c] for c in CLASSES_4]
-    ax.set_xticks(range(4), labels, fontsize=9)
-    ax.set_yticks(range(4), labels, fontsize=9)
+    labels = [CLASS_LABELS[c] for c in classes]
+    ax.set_xticks(range(n), labels, fontsize=9)
+    ax.set_yticks(range(n), labels, fontsize=9)
     ax.set_xlabel("Predicted")
     ax.set_ylabel("True")
-    for i in range(4):
-        for j in range(4):
+    for i in range(n):
+        for j in range(n):
             ax.text(j, i, f"{pct[i, j]:.1f}%\n({cm[i, j]})", ha="center", va="center", fontsize=9,
                     color="white" if pct[i, j] > 55 else TEXT_PRIMARY)
     for s in ax.spines.values():
         s.set_visible(False)
-    ax.set_title("Test confusion matrix — 4-class (n = 1,049)", loc="left")
+    ax.set_title(f"{title} (n = {cm.sum():,})", loc="left")
+
+
+def fig_confusion_matrix():
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.6), gridspec_kw={"width_ratios": [3, 4]})
+    draw_confusion(axes[0], "convnext_tiny_3class_224px", CLASSES_4[:3], "3-class, NDB-UFES (primary)")
+    draw_confusion(axes[1], MAIN_RUN, CLASSES_4, "4-class")
+    fig.suptitle("Test confusion matrices", fontweight="bold", x=0.01, ha="left")
     plt.tight_layout()
     save(fig, "confusion_matrix.png")
 
@@ -372,26 +379,34 @@ def fig_border_check():
         ("Normal (interior of source image)", "Normal: interior tiles"),
         ("Normal (edge of source image)", "Normal: edge tiles"),
     ]
-    summary = summary.set_index("group").loc[[g for g, _ in order]]
+    groups = [g for g, _ in order]
 
-    fig, ax = plt.subplots(figsize=(9, 3.6))
-    y = np.arange(len(order))[::-1]
-    colors = [SERIES[0]] * 3 + [SERIES[1]] * 2
-    vals = summary["border_share_mean"].values * 100
-    ax.barh(y, vals, height=0.6, color=colors)
-    for yi, v, n in zip(y, vals, summary["images"].values):
-        ax.text(v + 0.8, yi, f"{v:.0f}%  (n = {n})", va="center", fontsize=9)
+    # Before = model trained before sharpness matching (runs_before_blur/),
+    # after = current model (runs/)
+    series = [("before sharpness matching", RUNS.parent / "runs_before_blur"), ("after", RUNS)]
+    series = [(label, root) for label, root in series
+              if (root / MAIN_RUN / "gradcam" / "border_check_summary.csv").exists()]
+
+    fig, ax = plt.subplots(figsize=(9.5, 4.4))
+    y = np.arange(len(order))[::-1].astype(float)
+    height = 0.8 / len(series)
+
+    for k, (label, root) in enumerate(series):
+        s = pd.read_csv(root / MAIN_RUN / "gradcam" / "border_check_summary.csv").set_index("group").loc[groups]
+        vals = s["border_share_mean"].values * 100
+        offset = (len(series) - 1) / 2 * height - k * height
+        ax.barh(y + offset, vals, height=height * 0.9, color=SERIES[k], label=label)
+        for yi, v in zip(y + offset, vals):
+            ax.text(v + 0.8, yi, f"{v:.0f}%", va="center", fontsize=8.5)
 
     ax.axvline(49.0, color=TEXT_SECONDARY, linewidth=1, linestyle="--")
-    ax.text(49.6, y.min() - 0.62, "even spread (49%)", ha="left", fontsize=8, color=TEXT_SECONDARY)
-    ax.set_ylim(y.min() - 0.9, y.max() + 0.5)
+    ax.text(49.6, y.min() - 0.68, "even spread (49%)", ha="left", fontsize=8, color=TEXT_SECONDARY)
+    ax.set_ylim(y.min() - 0.9, y.max() + 0.6)
     ax.set_yticks(y, [label for _, label in order])
     ax.set_xlim(0, 100)
-    ax.set_xlabel("Share of Grad-CAM heatmap on the patch border (%)")
-    ax.set_title("Normal predictions rely on patch borders, not localized tissue", loc="left")
-    ax.legend(handles=[mpatches.Patch(color=SERIES[0], label="NDB-UFES classes"),
-                       mpatches.Patch(color=SERIES[1], label="Normal (second dataset)")],
-              loc="upper right")
+    ax.set_xlabel("Share of Grad-CAM heatmap on the patch border (%), all 1,049 test images")
+    ax.set_title("Normal predictions still rely on patch borders after sharpness matching", loc="left")
+    ax.legend(loc="upper right")
     clean_axes(ax, grid_axis="x")
     save(fig, "gradcam_border_check.png")
 

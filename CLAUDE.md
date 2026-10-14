@@ -59,23 +59,25 @@ Pipeline order:
   - Grad-CAM puts about 65% of Normal heatmaps on the patch border, versus about 50% for the other classes. This happens for edge and interior tiles alike.
   - **Confirmed cause: sharpness.** Laplacian variance at 224px alone separates Normal with AUC 0.946; Normal is about 5x sharper. Brightness (0.83) and contrast (0.85) also differ.
   - **Fix:** `preprocess.py` blurs Normal tiles (`TILE_BLUR_SIGMA = 2.5`, calibrated with `check_sharpness --calibrate-blur`), which brings the sharpness AUC to about 0.50. Training adds random blur.
-  - Treat Normal results as optimistic. The 3-class NDB-UFES result is the primary benchmark.
+  - **After retraining on sharpness-matched data:** Normal F1 is still 98.9% (98.3% in greyscale), and its Grad-CAM border share only dropped from about 65% to about 60%. The model still uses image-level source cues, most likely brightness (Normal ~155 vs ~141) and contrast. The top rows of Normal tiles are not brighter in the pixels, so the edge focus is a representation effect, not an artefact.
+  - Decision (user, option A): do not chase this further. The 3-class NDB-UFES result is the primary benchmark (90.9% balanced accuracy after the fix); 4-class is reported with the limitation.
+  - Pre-fix runs are kept locally in `runs_before_blur/` (git-ignored) for before/after figures.
 - **NDB-UFES folds are patch-level**, not patient-level, so results are optimistic. This includes published benchmarks; the main one is Maia et al. 2024 with DenseNet-121 at 91.9% balanced accuracy.
 - **SAM/MedSAM at 1024px uses about 0.8 GB of GPU memory per image** in one attention tensor. Keep the batch size at 2 or less and use fp16 on a T4.
 - **Tissue detection on the Normal images needs per-image optical density.** Their glass background has strong colour casts, which break fixed colour thresholds.
 
-## Current status (2026-10-13)
+## Current status (2026-10-14)
 
 **Done:**
 - data pipeline, splits, tiling, stain normalisation, colour-bias check;
 - MedSAM on the full dataset;
-- ConvNeXt 4-class, 3-class and greyscale runs (single seed);
+- ConvNeXt 4-class, 3-class and greyscale runs, before and after sharpness matching (single seed each);
 - Grad-CAM and the border check;
 - README figures.
 
 **Next:**
-1. Retrain on the sharpness-matched data (re-upload the Kaggle dataset first) and compare Normal accuracy with the pre-fix runs.
-2. Multi-seed runs (mean ± SD); a 384px experiment.
+1. Multi-seed runs, reported as mean ± SD (scores vary 3–5 points between single runs).
+2. A 384px experiment.
 3. Inference script / demo; final report.
 
 ## Working agreements with the user

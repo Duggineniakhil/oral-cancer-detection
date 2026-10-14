@@ -15,12 +15,12 @@ Deep-learning pipeline for **four-class classification of oral histopathology pa
 
 | | Result |
 |---|---|
-| **4-class ConvNeXt-Tiny** (test, n = 1,049) | **92.8% balanced accuracy · 92.5% macro-F1 · 0.982 macro AUC** |
-| NDB-UFES classes within the 4-class model | 91.1% balanced accuracy (published DenseNet-121 benchmark: 91.9%) |
+| **3-class ConvNeXt-Tiny** (primary; NDB-UFES, test n = 627) | **90.9% balanced accuracy · 90.6% macro-F1 · 0.980 macro AUC** (published DenseNet-121 benchmark on the same folds: 91.9%) |
+| 4-class ConvNeXt-Tiny (+ Normal, test n = 1,049) | 88.6% balanced accuracy · 89.4% macro-F1 · Normal F1 98.9% (cross-dataset, see below) |
 | **MedSAM segmentation** (all 6,626 patches) | Masks cover a median **95–98%** of each patch, so the ROI is the whole patch |
-| Explainability | Grad-CAM + a sharpness test show **Normal** is recognised largely from image sharpness (AUC 0.95 from one number), a dataset shortcut. It is now mitigated by sharpness matching; retraining is pending |
+| **Shortcut analysis** | The Normal class is separable by image-level properties of its source dataset (sharpness, brightness, contrast). Sharpness was removed by calibrated blur; Grad-CAM still shows border-focused, image-level evidence for Normal |
 
-These are results from a single training run per setting. See [Limitations](#limitations).
+These are results from a single training run per setting; between single runs, scores varied by 3–5 points. See [Limitations](#limitations).
 
 ---
 
@@ -130,15 +130,25 @@ A meaningful segmentation target for this data would be the **epithelium**, wher
 
 ### Results (test set)
 
-*Models trained **before** sharpness matching; retraining on the sharpness-matched data is pending.*
+Current models are trained on the **sharpness-matched** data (see [Explainability](#explainability-grad-cam)).
 
-| Run | Accuracy | Balanced acc. | Macro-F1 | Macro AUC |
-|---|---|---|---|---|
-| **4-class** | **94.2%** | **92.8%** | **92.5%** | **0.982** |
-| 4-class, greyscale input | 92.5% | 91.2% | 90.4% | 0.981 |
-| 3-class (NDB-UFES only) | 89.6% | 88.3% | 89.0% | 0.972 |
+| Run | Accuracy | Balanced acc. | Macro-F1 | Macro AUC | Normal F1 |
+|---|---|---|---|---|---|
+| **3-class, NDB-UFES (primary)** | **90.9%** | **90.9%** | **90.6%** | **0.980** | — |
+| 4-class | 91.9% | 88.6% | 89.4% | 0.981 | 98.9% |
+| 4-class, greyscale input | 93.2% | 91.6% | 91.5% | 0.981 | 98.3% |
 
-**Comparison with published work.** On the NDB-UFES test patches, the 4-class model reaches **91.1%** balanced accuracy, against **91.9%** for DenseNet-121 in Maia et al. (2024) on the same folds. The separate 3-class run (88.3%) stopped early and its validation scores fluctuated. With one run per setting, differences of 2–3 points are within run-to-run variation.
+**Why 3-class is the primary result.** All three NDB-UFES classes come from the same source, so the cross-dataset shortcut described below cannot apply. This makes it the fair comparison with published work: **90.9%** balanced accuracy vs **91.9%** for DenseNet-121 in Maia et al. (2024), on the same official folds.
+
+**Before vs after sharpness matching** (single runs each):
+
+| Run | Balanced acc. before | Balanced acc. after |
+|---|---|---|
+| 3-class | 88.3% | 90.9% |
+| 4-class | 92.8% | 88.6% |
+| 4-class, greyscale | 91.2% | 91.6% |
+
+The 3-class data was not changed by sharpness matching (it contains no Normal tiles), yet its score moved by 2.6 points, mainly through run-to-run variation (the blur augmentation was also added). Single-run differences of this size are therefore not meaningful; multi-seed runs (mean ± SD) are planned.
 
 ![Confusion matrix](docs/images/confusion_matrix.png)
 
@@ -154,13 +164,14 @@ Errors are almost entirely between **adjacent grades** (OSCC ↔ with dysplasia,
 
 ![Grad-CAM examples](docs/images/gradcam_examples.jpg)
 
-For the NDB-UFES classes, heatmaps highlight tissue regions such as cell-dense areas and atypical nuclei. For **Normal**, the strongest activation often lies at the patch edge. A border-focus check over **all** 1,049 test images quantifies this:
+For the NDB-UFES classes, heatmaps highlight tissue regions such as cell-dense areas and atypical nuclei. For **Normal**, the strongest activation often lies at the patch edge, mostly the top edge. A border-focus check over **all** 1,049 test images quantifies this, both for the model trained before sharpness matching and for the current model:
 
 ![Grad-CAM border check](docs/images/gradcam_border_check.png)
 
-- **NDB-UFES classes:** heatmaps are spread about as evenly as chance (49–54% of the heatmap on the border).
-- **Normal:** two thirds of the heatmap lies on the border, and the peak is on the border in 71–78% of images.
-- Tiles from the edge and from the interior of the source image behave the same, which **rules out** lighting or edge artefacts of the original microscope images.
+- **NDB-UFES classes:** heatmaps are spread about as evenly as chance (46–54% of the heatmap on the border).
+- **Normal, before sharpness matching:** about two thirds of the heatmap lies on the border, and the peak is on the border in 71–78% of images.
+- **Normal, after sharpness matching:** still 59–61% on the border, and the peak is on the border in 71–79% of images.
+- Tiles from the edge and from the interior of the source image behave the same, which **rules out** lighting or edge artefacts of the original microscope images. The top rows of Normal tiles are also no brighter than the rest (157 vs 154 mean intensity), so the edge focus is not a visible artefact in the pixels. It is how the network represents an image-level property.
 
 **Sharpness test.** Each global image property is reduced to one number per image and used *alone* to separate Normal from the NDB-UFES classes (250 images per class, `scripts/analysis/check_sharpness.py`):
 
@@ -172,15 +183,22 @@ For the NDB-UFES classes, heatmaps highlight tissue regions such as cell-dense a
 
 Normal tiles are about 5× sharper. This global property explains both the border-focused Grad-CAM and Normal staying at ~99% F1 in greyscale: the earlier Normal result was largely a **dataset shortcut**.
 
-**Mitigation.** A Gaussian blur on Normal tiles was calibrated by sweeping σ. σ = 2.5 px (512 px) was chosen. On the regenerated, sharpness-matched data, the sharpness AUC at the model's 224 px input dropped from 0.95 to **0.52**. Brightness and contrast cues remain (AUC 0.76 / 0.81) and are addressed by colour/brightness augmentation. The cross-dataset Normal class therefore stays a documented limitation, and the **3-class NDB-UFES result is the primary, shortcut-free benchmark**.
+**Mitigation.** A Gaussian blur on Normal tiles was calibrated by sweeping σ. σ = 2.5 px (512 px) was chosen. On the regenerated, sharpness-matched data, the sharpness AUC at the model's 224 px input dropped from 0.95 to **0.52**. Brightness and contrast cues remain (AUC 0.76 / 0.81); Normal tiles are clearly brighter (mean intensity ~155 vs ~141).
+
+**Result after retraining.** Normal F1 stayed at 98.9% (98.3% in greyscale), and the Grad-CAM border focus for Normal only dropped from ~65% to ~60%. Removing sharpness did **not** force the model to use localised tissue features for Normal. It still separates Normal by image-level differences between the two source datasets, most likely brightness and contrast.
+
+**Conclusion.**
+- The high Normal score cannot be read as evidence that the model recognises normal tissue.
+- Combining two datasets creates source-level cues that colour normalisation, tiling and sharpness matching do not fully remove.
+- The **3-class NDB-UFES result is the primary benchmark**. The 4-class result is reported with this documented limitation.
 
 ---
 
 ## Limitations
 
 - **Patch-level folds.** The official NDB-UFES folds were created by stratified K-fold over *patches*, not patients. Patches from the same patient can appear in training and test, so all NDB-UFES results, including published ones, are likely optimistic.
-- **Cross-dataset Normal class.** Normal comes from a different institution. Sharpness, brightness and contrast differ between the sources. Sharpness is matched by calibrated blur; brightness and contrast are only weakened by augmentation.
-- **Single runs.** Each setting was trained once; results should be reported as mean ± SD over several seeds.
+- **Cross-dataset Normal class.** Normal comes from a different institution. Sharpness, brightness and contrast differ between the sources. Even after sharpness matching, Grad-CAM shows Normal is recognised from image-level properties, so the Normal score (~99% F1) is not evidence of tissue-level recognition. A Normal class from the same institution as the other classes would be needed to remove this.
+- **Single runs.** Each setting was trained once, and scores varied by 3–5 points between runs. Results should be reported as mean ± SD over several seeds.
 - **No ground-truth masks.** Segmentation quality (Dice/IoU) cannot be measured without reference annotations.
 
 ---
@@ -225,6 +243,7 @@ oral-cancer-detection/
 │   └── convnext_training_kaggle.ipynb
 │
 └── docs/
+    ├── guide_presentation.md       # Plain-language walkthrough for presenting the project
     └── images/                     # Figures used in this README
 
 # Local only (git-ignored): dataset_1_ndb_ufes/, dataset_2_normal/, splits/,
@@ -297,8 +316,9 @@ Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` 
 | ConvNeXt-Tiny 4-class / 3-class / greyscale | ✅ Done (single seed) |
 | Grad-CAM + border-focus check | ✅ Done |
 | Identify the Normal shortcut (sharpness) and calibrate a blur fix | ✅ Done |
-| Retrain on sharpness-matched data | ⏳ Next |
-| Multi-seed runs (mean ± SD), 384 px experiment | ⏳ Planned |
+| Retrain on sharpness-matched data + Grad-CAM re-check | ✅ Done (Normal still image-level; 3-class is primary) |
+| Multi-seed runs (mean ± SD) | ⏳ Next |
+| 384 px experiment | ⏳ Planned |
 | Final report / paper write-up | ⏳ Planned |
 | Inference script / demo | ⏳ Planned |
 | Epithelium segmentation with manual annotations | 💡 Optional |
