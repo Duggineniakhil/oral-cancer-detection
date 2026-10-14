@@ -76,7 +76,7 @@ Pipeline order:
 - README figures.
 
 **Next:**
-1. Multi-seed runs, reported as mean ± SD (scores vary 3–5 points between single runs).
+1. Multi-seed runs, reported as mean ± SD (scores vary 3–5 points between single runs). Use `notebooks/convnext_multiseed_kaggle.ipynb` (3 settings × seeds 1–3; run folders `<setting>_seed<N>`), then `python -m scripts.classification.summarize_seeds`.
 2. A 384px experiment.
 3. Inference script / demo; final report.
 

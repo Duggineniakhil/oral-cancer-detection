@@ -234,13 +234,15 @@ oral-cancer-detection/
 │   │   └── prepare_annotation_set.py
 │   ├── classification/             # ConvNeXt-Tiny
 │   │   ├── train_classifier.py
+│   │   ├── summarize_seeds.py      # Mean ± SD over multi-seed runs
 │   │   └── gradcam.py
 │   └── reporting/
 │       └── make_readme_figures.py  # Generates docs/images/
 │
 ├── notebooks/                      # Kaggle GPU notebooks
 │   ├── medsam_segmentation_kaggle.ipynb
-│   └── convnext_training_kaggle.ipynb
+│   ├── convnext_training_kaggle.ipynb
+│   └── convnext_multiseed_kaggle.ipynb   # 3 settings × 3 seeds
 │
 └── docs/
     ├── guide_presentation.md       # Plain-language walkthrough for presenting the project
