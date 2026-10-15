@@ -81,14 +81,14 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 
 ---
 
-## Where we are: about 75–80% done
+## Where we are: about 85% done
 
 | Done ✅ | Still to do ⏳ |
 |---|---|
-| Literature survey, dataset and design | Try a **larger image size** (384px) for finer cell detail |
-| Data pipeline: splits, tiling, colour standardisation | **Prediction tool**: upload an image, get class + heatmap |
-| MedSAM segmentation on all images (finding documented) | **Final report** / paper write-up |
-| ConvNeXt classification (3 versions × 3 seeds, mean ± SD) | *Optional:* epithelium segmentation (needs hand-drawn masks) |
+| Literature survey, dataset and design | **Prediction tool**: upload an image, get class + heatmap |
+| Data pipeline: splits, tiling, colour standardisation | **Final report** / paper write-up |
+| MedSAM segmentation on all images (finding documented) | *Optional:* epithelium segmentation (needs hand-drawn masks) |
+| ConvNeXt classification (3 versions × 3 seeds, mean ± SD) | |
 | Grad-CAM, shortcut found, blur fix tested, finding documented | |
 
 ---

@@ -314,14 +314,13 @@ Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` 
 | Dataset construction, official splits, tiling, stain normalisation | ✅ Done |
 | Colour-bias analysis | ✅ Done |
 | MedSAM segmentation (full dataset) | ✅ Done (no localisation benefit on these patches) |
-| ConvNeXt-Tiny 4-class / 3-class / greyscale | ✅ Done (single seed) |
+| ConvNeXt-Tiny 4-class / 3-class / greyscale | ✅ Done |
 | Grad-CAM + border-focus check | ✅ Done |
 | Identify the Normal shortcut (sharpness) and calibrate a blur fix | ✅ Done |
 | Retrain on sharpness-matched data + Grad-CAM re-check | ✅ Done (Normal still image-level; 3-class is primary) |
 | Multi-seed runs (3 seeds, mean ± SD) | ✅ Done |
-| 384 px experiment | ⏳ Next |
+| Inference script / demo | ⏳ Next |
 | Final report / paper write-up | ⏳ Planned |
-| Inference script / demo | ⏳ Planned |
 | Epithelium segmentation with manual annotations | 💡 Optional |
 
 ---

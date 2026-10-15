@@ -77,8 +77,12 @@ Pipeline order:
 - README figures.
 
 **Next:**
-1. A 384px experiment (use the multi-seed notebook pattern, 3 seeds). Multi-seed runs use `notebooks/convnext_multiseed_kaggle.ipynb`, with run folders `<setting>_seed<N>`, then `python -m scripts.classification.summarize_seeds`.
-2. Inference script / demo; final report.
+1. Inference script / demo (image in → class probabilities + Grad-CAM).
+2. Final report.
+
+A 384px experiment was considered and **dropped by the user**: 224px is the standard input size of the pretrained model. Do not propose it again or list it as future work.
+
+For any new training setting, use the multi-seed pattern: `notebooks/convnext_multiseed_kaggle.ipynb` with run folders `<setting>_seed<N>`, then `python -m scripts.classification.summarize_seeds`.
 
 ## Working agreements with the user
 
