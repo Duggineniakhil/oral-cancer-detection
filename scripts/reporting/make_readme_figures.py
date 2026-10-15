@@ -324,6 +324,56 @@ def fig_per_class_f1():
 
 
 # ============================================================
+# 6b. CLASSIFICATION: MULTI-SEED RESULTS
+# ============================================================
+
+MAIA_2024_BALANCED_ACC = 91.91  # DenseNet-121, NDB-UFES 3-class, same official folds
+
+
+def fig_multiseed():
+    per_run_csv = RUNS / "multiseed_per_run.csv"
+    if not per_run_csv.exists():
+        print("  (skipping multiseed figure: run summarize_seeds first)")
+        return
+
+    per_run = pd.read_csv(per_run_csv)
+    rows = [
+        ("convnext_tiny_3class_224px", "balanced_accuracy", "3-class, NDB-UFES (primary)"),
+        ("convnext_tiny_4class_224px", "balanced_accuracy", "4-class"),
+        ("convnext_tiny_4class_224px", "ndb_balanced_accuracy", "4-class, NDB-UFES patches only"),
+        ("convnext_tiny_4class_gray_224px", "balanced_accuracy", "4-class, greyscale"),
+    ]
+
+    fig, ax = plt.subplots(figsize=(9, 3.8))
+    y = np.arange(len(rows))[::-1]
+
+    for yi, (setting, metric, _) in zip(y, rows):
+        vals = per_run.loc[per_run["setting"] == setting, metric].values * 100
+        mean, sd = vals.mean(), vals.std(ddof=1)
+        ax.plot([mean - sd, mean + sd], [yi, yi], color=SERIES[0], linewidth=6,
+                solid_capstyle="round", alpha=0.3)
+        ax.scatter(vals, [yi] * len(vals), s=40, color=SERIES[0], edgecolor=SURFACE, linewidth=1.5,
+                   zorder=3, label="single seed" if yi == y[0] else None)
+        ax.plot(mean, yi, "D", color=TEXT_PRIMARY, markersize=7, zorder=4,
+                label="mean ± SD" if yi == y[0] else None)
+        ax.text(mean, yi - 0.34, f"{mean:.1f} ± {sd:.1f}%", ha="center", va="top", fontsize=9, zorder=5,
+                bbox=dict(boxstyle="round,pad=0.15", facecolor=SURFACE, edgecolor="none"))
+
+    ax.axvline(MAIA_2024_BALANCED_ACC, color=SERIES[1], linewidth=1.5, linestyle="--")
+    ax.text(MAIA_2024_BALANCED_ACC + 0.1, y.max() + 0.42, "Maia et al. 2024, DenseNet-121, 3-class (91.9%)",
+            fontsize=8, color=TEXT_SECONDARY)
+
+    ax.set_yticks(y, [label for _, _, label in rows])
+    ax.set_ylim(y.min() - 0.8, y.max() + 0.7)
+    ax.set_xlim(86, 96)
+    ax.set_xlabel("Test balanced accuracy (%)")
+    ax.set_title("Balanced accuracy over 3 seeds", loc="left")
+    ax.legend(loc="lower right")
+    clean_axes(ax, grid_axis="x")
+    save(fig, "multiseed_results.png")
+
+
+# ============================================================
 # 7. GRAD-CAM EXAMPLES
 # ============================================================
 
@@ -426,5 +476,6 @@ if __name__ == "__main__":
     fig_training_curves()
     fig_confusion_matrix()
     fig_per_class_f1()
+    fig_multiseed()
     fig_gradcam()
     fig_border_check()
