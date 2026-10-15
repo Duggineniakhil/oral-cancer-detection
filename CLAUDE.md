@@ -18,6 +18,8 @@ Both datasets are CC BY 4.0.
 
 ## Commands
 
+Shared code lives in the `oral_cancer/` package: `config`, `model` (ConvNeXt, transforms, GradCAM), `stain` (Macenko), `tissue` (tiling and tissue mask) and `predictor`. Scripts import from it; don't duplicate it.
+
 Always run scripts **as modules from the project root**:
 
 ```bash
@@ -74,11 +76,11 @@ Pipeline order:
 - ConvNeXt 4-class, 3-class and greyscale runs, before and after sharpness matching;
 - **multi-seed results** (seeds 1–3, sharpness-matched data): 3-class **89.7 ± 1.4%** balanced accuracy (primary; Maia 2024: 91.9%), 4-class 92.2 ± 1.1% (NDB-only 90.0 ± 1.7%, Normal F1 99.3%), greyscale 90.5 ± 1.4%. Seed spread is 1–2 points SD; single seed-42 runs are used only for the confusion-matrix, curve and Grad-CAM figures;
 - Grad-CAM and the border check;
-- README figures.
+- README figures;
+- prediction tool: `oral_cancer/predictor.py`, CLI `python -m scripts.inference.predict <image>`, web demo `streamlit run app/streamlit_app.py --server.address localhost`. Verified to reproduce the test-set predictions exactly.
 
 **Next:**
-1. Inference script / demo (image in → class probabilities + Grad-CAM).
-2. Final report.
+1. Final report.
 
 A 384px experiment was considered and **dropped by the user**: 224px is the standard input size of the pretrained model. Do not propose it again or list it as future work.
 

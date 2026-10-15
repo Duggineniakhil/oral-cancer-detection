@@ -30,8 +30,7 @@ from PIL import Image
 from sklearn.metrics import confusion_matrix, f1_score
 
 from oral_cancer.config import OUTPUT_ROOT, PROJECT_DIR, resolve
-from scripts.classification.gradcam import GradCAM
-from scripts.classification.train_classifier import CLASSES_4, build_model, build_transforms
+from oral_cancer.model import CLASSES_4, GradCAM, build_model, build_transforms
 
 
 # ============================================================

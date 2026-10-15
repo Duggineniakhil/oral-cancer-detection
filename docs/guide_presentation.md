@@ -74,22 +74,42 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 **Say:**
 - "The official dataset split is by image piece, not by patient, so the same patient can be in train and test. Published results have the same issue."
 - "Normal comes from a different dataset, so some differences (brightness, contrast) remain."
-- "Each model was trained once. For the final report we'll train each 3 times and report the average."
+- "Each model was trained 3 times with different random seeds. Results vary by 1–2 points between runs, so we report the average ± spread."
 
 ### 9. Project structure and Getting started
 **Say:** "The code is organised by stage: data, analysis, segmentation, classification, reporting. Everything can be re-run with one command per step, and the GPU steps run on Kaggle."
 
+### 10. Live demo (prediction tool)
+**Before the meeting**, start it in a terminal from the project folder:
+
+```bash
+streamlit run app/streamlit_app.py --server.address localhost
+```
+
+It opens in the browser at `http://localhost:8501`. The first start takes about 20 seconds.
+
+**Show:**
+1. **Try a test image** → pick an **OSCC** example: correct prediction, a confidence of about 90%+, and a heatmap on the tissue.
+2. Pick a **"without dysplasia"** example: the hardest class. If it's wrong, say "this is the class even pathologists find hardest".
+3. Switch the model in the sidebar to **3-class**: our main benchmark model.
+
+**Say:**
+- "The tool applies exactly the same steps as training: tiling, stain normalisation, then the model. We checked that it gives identical results to our test evaluation."
+- "Large microscope images are cut into tiles, and the heatmap is stitched together."
+- "It's a research prototype, not a diagnostic tool, and the page says so."
+
 ---
 
-## Where we are: about 85% done
+## Where we are: about 90% done
 
 | Done ✅ | Still to do ⏳ |
 |---|---|
-| Literature survey, dataset and design | **Prediction tool**: upload an image, get class + heatmap |
-| Data pipeline: splits, tiling, colour standardisation | **Final report** / paper write-up |
-| MedSAM segmentation on all images (finding documented) | *Optional:* epithelium segmentation (needs hand-drawn masks) |
+| Literature survey, dataset and design | **Final report** / paper write-up |
+| Data pipeline: splits, tiling, colour standardisation | *Optional:* epithelium segmentation (needs hand-drawn masks) |
+| MedSAM segmentation on all images (finding documented) | |
 | ConvNeXt classification (3 versions × 3 seeds, mean ± SD) | |
 | Grad-CAM, shortcut found, blur fix tested, finding documented | |
+| **Prediction tool**: web demo + command line (image → class + heatmap) | |
 
 ---
 

@@ -8,6 +8,7 @@ from PIL import Image, ImageFilter
 from tqdm import tqdm
 
 from oral_cancer.config import DATA_ROOT, OUTPUT_ROOT, resolve, relative
+from oral_cancer.tissue import MIN_TISSUE_FRACTION, TILE_SIZE, iter_tiles, tissue_mask
 
 
 # ============================================================
@@ -30,17 +31,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # CONFIGURATION
 # ============================================================
 
-# NDB-UFES patches are 512x512 crops of 2048x1536 microscope
-# images (Leica ICC50 HD, 10x/40x objectives). The Normal images
-# come from the same camera at the same objectives, so they are
-# TILED into 512x512 crops rather than resized. Resizing would
-# shrink cells ~4x and give the classifier a scale shortcut.
-TILE_SIZE = 512
-
-# Fraction of a tile that must be tissue. NDB-UFES patches were
-# curated to exclude blank areas (~99% of them are >= 0.6 tissue),
-# so Normal tiles below 0.6 are discarded to match that curation.
-MIN_TISSUE_FRACTION = 0.6
+# Tiling and tissue detection (TILE_SIZE = 512, MIN_TISSUE_FRACTION = 0.6,
+# optical density relative to each image's own glass colour) live in
+# oral_cancer/tissue.py, shared with the prediction tool.
 
 # Sharpness matching. NDB-UFES patches are much softer than the Normal
 # images (Laplacian sharpness at the 224 px model input separates the
@@ -48,47 +41,6 @@ MIN_TISSUE_FRACTION = 0.6
 # calibrated with `scripts.analysis.check_sharpness --calibrate-blur`,
 # brings that AUC to ~0.5. Applied to tiled (Normal) images only.
 TILE_BLUR_SIGMA = 2.5
-
-# Tissue detection uses optical density (OD) relative to each
-# image's own background (glass) colour. The Normal slides have
-# strong, varying colour casts (cyan/green glass), so fixed
-# colour or brightness thresholds fail on them.
-BACKGROUND_PERCENTILE = 99
-OD_THRESHOLD = 0.2
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def tissue_mask(img):
-    """Boolean mask of pixels that absorb light relative to the glass."""
-    rgb = np.asarray(img).astype(np.float32)
-
-    # Glass is the brightest region in brightfield microscopy
-    background = np.percentile(
-        rgb.reshape(-1, 3),
-        BACKGROUND_PERCENTILE,
-        axis=0
-    )
-
-    od = -np.log(np.clip((rgb + 1) / (background + 1), 1e-6, 1.0))
-
-    return od.max(axis=2) > OD_THRESHOLD
-
-
-def iter_tiles(img):
-    """Yield (row, col, box) for a non-overlapping TILE_SIZE grid."""
-    w, h = img.size
-    for r in range(h // TILE_SIZE):
-        for c in range(w // TILE_SIZE):
-            box = (
-                c * TILE_SIZE,
-                r * TILE_SIZE,
-                (c + 1) * TILE_SIZE,
-                (r + 1) * TILE_SIZE
-            )
-            yield r, c, box
 
 
 # ============================================================

@@ -35,8 +35,9 @@ Classification results are **mean ± SD over 3 random seeds**, on the official N
 7. [Limitations](#limitations)
 8. [Project structure](#project-structure)
 9. [Getting started](#getting-started)
-10. [Project status](#project-status)
-11. [References](#references)
+10. [Prediction tool](#prediction-tool)
+11. [Project status](#project-status)
+12. [References](#references)
 
 ---
 
@@ -210,8 +211,13 @@ oral-cancer-detection/
 ├── CLAUDE.md                       # Guide for AI-assisted development
 ├── requirements.txt
 │
-├── oral_cancer/                    # Shared package
-│   └── config.py                   # DATA_ROOT / OUTPUT_ROOT, relative CSV paths
+├── oral_cancer/                    # Shared package (used by scripts, notebooks and the app)
+│   ├── config.py                   # DATA_ROOT / OUTPUT_ROOT, relative CSV paths
+│   ├── model.py                    # ConvNeXt-Tiny, transforms, Grad-CAM
+│   ├── stain.py                    # Macenko stain normalisation
+│   ├── tissue.py                   # Tiling + tissue detection
+│   ├── predictor.py                # Image → class probabilities + Grad-CAM
+│   └── assets/macenko_reference.npz  # Stain reference (fitted on NDB-UFES train)
 │
 ├── scripts/
 │   ├── data/                       # Dataset construction & preprocessing
@@ -235,6 +241,8 @@ oral-cancer-detection/
 │   │   ├── train_classifier.py
 │   │   ├── summarize_seeds.py      # Mean ± SD over multi-seed runs
 │   │   └── gradcam.py
+│   ├── inference/
+│   │   └── predict.py              # Command-line prediction
 │   └── reporting/
 │       └── make_readme_figures.py  # Generates docs/images/
 │
@@ -306,6 +314,29 @@ Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` 
 
 ---
 
+## Prediction tool
+
+A command-line tool predicts the class of a new H&E image and shows a Grad-CAM heatmap. It needs a trained model in `runs/<run>/best_model.pt` (download `runs.zip` from Kaggle); the stain reference ships with the code.
+
+The image goes through the **same steps as the training data**:
+1. **Tiling.** Images larger than one patch are cut into 512×512 tiles, never resized. Tiles with less than 60% tissue are skipped.
+2. **Stain normalisation.** Each tile is Macenko-normalised with the training reference.
+3. **Classification.** Each tile is classified at 224 px, and tile probabilities are averaged into one prediction.
+4. **Heatmap.** Grad-CAM heatmaps from all tiles are stitched into one overlay.
+
+On test patches, the tool reproduces the evaluation predictions exactly (probability differences ≤ 0.0003).
+
+```bash
+# Command line: prints probabilities, saves overlay + JSON to outputs/predictions/
+python -m scripts.inference.predict path/to/image.png --model 4class   # or --model 3class
+```
+
+![Prediction example](docs/images/prediction_example.jpg)
+
+> **Research prototype, not for clinical use.** It expects H&E images at 10×/40× objective, like the training data. Normal predictions are affected by the documented dataset shortcut; on Normal images the heatmap typically sits at each tile's top edge.
+
+---
+
 ## Project status
 
 | Phase | Status |
@@ -319,8 +350,8 @@ Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` 
 | Identify the Normal shortcut (sharpness) and calibrate a blur fix | ✅ Done |
 | Retrain on sharpness-matched data + Grad-CAM re-check | ✅ Done (Normal still image-level; 3-class is primary) |
 | Multi-seed runs (3 seeds, mean ± SD) | ✅ Done |
-| Inference script / demo | ⏳ Next |
-| Final report / paper write-up | ⏳ Planned |
+| Prediction tool (command line) | ✅ Done |
+| Final report / paper write-up | ⏳ Next |
 | Epithelium segmentation with manual annotations | 💡 Optional |
 
 ---

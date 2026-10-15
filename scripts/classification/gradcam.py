@@ -33,7 +33,7 @@ import torch.nn.functional as F
 from PIL import Image
 
 from oral_cancer.config import OUTPUT_ROOT, resolve
-from scripts.classification.train_classifier import CLASSES_3, CLASSES_4, build_model, build_transforms
+from oral_cancer.model import CLASSES_3, CLASSES_4, GradCAM, build_model, build_transforms
 
 
 # ============================================================
@@ -42,67 +42,6 @@ from scripts.classification.train_classifier import CLASSES_3, CLASSES_4, build_
 
 RANDOM_SEED = 42
 HEATMAP_ALPHA = 0.45
-
-
-# ============================================================
-# GRAD-CAM
-# ============================================================
-
-class GradCAM:
-    """Grad-CAM (Selvaraju et al., 2017) on a convolutional layer."""
-
-    def __init__(self, model, layer):
-        self.model = model
-        self.activations = None
-        self.gradients = None
-        layer.register_forward_hook(self._save_activation)
-
-    def _save_activation(self, module, inputs, output):
-        self.activations = output
-        output.register_hook(self._save_gradient)
-
-    def _save_gradient(self, grad):
-        self.gradients = grad
-
-    def __call__(self, image, target_class=None):
-        """Returns (heatmap in [0, 1] at input size, class probabilities)."""
-        self.model.zero_grad(set_to_none=True)
-
-        with torch.enable_grad():
-            logits = self.model(image)
-            probs = torch.softmax(logits, dim=1)[0].detach()
-
-            if target_class is None:
-                target_class = int(probs.argmax())
-
-            logits[0, target_class].backward()
-
-        # Channel weights = spatially averaged gradients
-        weights = self.gradients.mean(dim=(2, 3), keepdim=True)
-        cam = F.relu((weights * self.activations).sum(dim=1, keepdim=True))
-        cam = F.interpolate(cam, size=image.shape[-2:], mode="bilinear", align_corners=False)
-        cam = cam[0, 0].detach()
-        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
-
-        return cam.cpu().numpy(), probs.cpu().numpy()
-
-    def raw_batch(self, images):
-        """Un-upsampled CAMs (B, h, w) for the predicted class of each image.
-
-        ConvNeXt uses LayerNorm (per-sample), so backpropagating the sum
-        of each image's own target logit gives per-image gradients.
-        """
-        self.model.zero_grad(set_to_none=True)
-
-        with torch.enable_grad():
-            logits = self.model(images)
-            preds = logits.argmax(dim=1)
-            logits.gather(1, preds[:, None]).sum().backward()
-
-        weights = self.gradients.mean(dim=(2, 3), keepdim=True)
-        cams = F.relu((weights * self.activations).sum(dim=1)).detach()
-
-        return cams.cpu().numpy(), preds.cpu().numpy()
 
 
 # ============================================================
@@ -262,11 +201,12 @@ def main(args):
     preds = pd.read_csv(run_dir / "test_predictions.csv")
     preds["correct"] = preds["class"] == preds["predicted"]
 
-    correct = (
-        preds[preds["correct"]]
-        .groupby("class")
-        .sample(n=args.per_class, random_state=RANDOM_SEED)
-    )
+    correct = preds[preds["correct"]]
+    if (correct["class"].value_counts().reindex(class_names, fill_value=0) >= args.per_class).all():
+        correct = correct.groupby("class").sample(n=args.per_class, random_state=RANDOM_SEED)
+    else:
+        # Some class has too few correct predictions (e.g. a weak model)
+        correct = correct.sample(frac=1, random_state=RANDOM_SEED).groupby("class").head(args.per_class)
     errors = preds[~preds["correct"]]
     errors = errors.sample(n=min(args.errors, len(errors)), random_state=RANDOM_SEED)
 
@@ -305,6 +245,9 @@ def main(args):
 
     for class_name in class_names:
         rows = correct[correct["class"] == class_name]
+        if rows.empty:
+            print(f"  no correct predictions for {class_name}; skipped")
+            continue
         samples = compute(rows)
         path = out_dir / f"correct_{class_name}.png"
         plot_grid(samples, f"Grad-CAM — correctly classified: {short(class_name)}", path)

@@ -36,9 +36,9 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from torch.utils.data import DataLoader, Dataset
-from torchvision import models, transforms
 
 from oral_cancer.config import OUTPUT_ROOT, resolve
+from oral_cancer.model import CLASSES_3, CLASSES_4, build_model, build_transforms
 
 
 # ============================================================
@@ -46,18 +46,6 @@ from oral_cancer.config import OUTPUT_ROOT, resolve
 # ============================================================
 
 DEFAULT_CSV = "splits/normalized_dataset.csv"
-
-CLASSES_4 = [
-    "OSCC",
-    "Leukoplakia_with_dysplasia",
-    "Leukoplakia_without_dysplasia",
-    "Normal",
-]
-CLASSES_3 = CLASSES_4[:3]
-
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
-
 
 # ============================================================
 # DATA
@@ -77,53 +65,6 @@ class PatchDataset(Dataset):
         with Image.open(self.paths[i]) as img:
             image = self.transform(img.convert("RGB"))
         return image, self.labels[i]
-
-
-class RandomRotate90:
-    """Histology has no canonical orientation."""
-
-    def __call__(self, img):
-        return img.rotate(90 * random.randint(0, 3))
-
-
-def build_transforms(img_size, grayscale):
-    gray = [transforms.Grayscale(num_output_channels=3)] if grayscale else []
-
-    train = transforms.Compose([
-        transforms.RandomResizedCrop(img_size, scale=(0.7, 1.0), ratio=(0.9, 1.1)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip(),
-        RandomRotate90(),
-        # Strong colour augmentation so the model cannot rely on the
-        # residual stain differences between the two source datasets
-        transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.05),
-        # Random blur on all classes, so residual sharpness differences
-        # between the two source datasets are not a reliable cue
-        transforms.RandomApply([transforms.GaussianBlur(kernel_size=9, sigma=(0.1, 1.5))], p=0.5),
-        *gray,
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-    evaluate = transforms.Compose([
-        transforms.Resize(img_size),
-        *gray,
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-    return train, evaluate
-
-
-# ============================================================
-# MODEL
-# ============================================================
-
-def build_model(num_classes, pretrained):
-    weights = models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1 if pretrained else None
-    model = models.convnext_tiny(weights=weights)
-    model.classifier[2] = nn.Linear(model.classifier[2].in_features, num_classes)
-    return model
 
 
 # ============================================================
