@@ -228,7 +228,6 @@ def fig_segmentation_coverage():
 RUN_LABELS = {
     "convnext_tiny_4class_224px": "4-class",
     "convnext_tiny_4class_gray_224px": "4-class, greyscale",
-    "convnext_tiny_3class_224px": "3-class (NDB-UFES)",
 }
 
 
@@ -288,10 +287,8 @@ def draw_confusion(ax, run, classes, title):
 
 
 def fig_confusion_matrix():
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.6), gridspec_kw={"width_ratios": [3, 4]})
-    draw_confusion(axes[0], "convnext_tiny_3class_224px", CLASSES_4[:3], "3-class, NDB-UFES (primary)")
-    draw_confusion(axes[1], MAIN_RUN, CLASSES_4, "4-class")
-    fig.suptitle("Test confusion matrices", fontweight="bold", x=0.01, ha="left")
+    fig, ax = plt.subplots(figsize=(7.2, 5.8))
+    draw_confusion(ax, MAIN_RUN, CLASSES_4, "Test confusion matrix, 4-class")
     plt.tight_layout()
     save(fig, "confusion_matrix.png")
 
@@ -326,7 +323,7 @@ def fig_per_class_f1():
 # 6b. CLASSIFICATION: MULTI-SEED RESULTS
 # ============================================================
 
-MAIA_2024_BALANCED_ACC = 91.91  # DenseNet-121, NDB-UFES 3-class, same official folds
+MAIA_2024_BALANCED_ACC = 91.91  # DenseNet-121 on the 3 NDB-UFES classes, same official folds
 
 
 def fig_multiseed():
@@ -337,13 +334,12 @@ def fig_multiseed():
 
     per_run = pd.read_csv(per_run_csv)
     rows = [
-        ("convnext_tiny_3class_224px", "balanced_accuracy", "3-class, NDB-UFES (primary)"),
         ("convnext_tiny_4class_224px", "balanced_accuracy", "4-class"),
-        ("convnext_tiny_4class_224px", "ndb_balanced_accuracy", "4-class, NDB-UFES patches only"),
+        ("convnext_tiny_4class_224px", "ndb_balanced_accuracy", "4-class, NDB-UFES classes only"),
         ("convnext_tiny_4class_gray_224px", "balanced_accuracy", "4-class, greyscale"),
     ]
 
-    fig, ax = plt.subplots(figsize=(9, 3.8))
+    fig, ax = plt.subplots(figsize=(9, 3.2))
     y = np.arange(len(rows))[::-1]
 
     for yi, (setting, metric, _) in zip(y, rows):
@@ -359,14 +355,14 @@ def fig_multiseed():
                 bbox=dict(boxstyle="round,pad=0.15", facecolor=SURFACE, edgecolor="none"))
 
     ax.axvline(MAIA_2024_BALANCED_ACC, color=SERIES[1], linewidth=1.5, linestyle="--")
-    ax.text(MAIA_2024_BALANCED_ACC + 0.1, y.max() + 0.42, "Maia et al. 2024, DenseNet-121, 3-class (91.9%)",
-            fontsize=8, color=TEXT_SECONDARY)
+    ax.text(MAIA_2024_BALANCED_ACC - 0.1, y.max() + 0.42, "Published: DenseNet-121 on the NDB-UFES classes (91.9%)",
+            fontsize=8, color=TEXT_SECONDARY, ha="right")
 
     ax.set_yticks(y, [label for _, _, label in rows])
     ax.set_ylim(y.min() - 0.8, y.max() + 0.7)
     ax.set_xlim(86, 96)
     ax.set_xlabel("Test balanced accuracy (%)")
-    ax.set_title("Balanced accuracy over 3 seeds", loc="left")
+    ax.set_title("4-class model: balanced accuracy over 3 seeds", loc="left")
     ax.legend(loc="lower right")
     clean_axes(ax, grid_axis="x")
     save(fig, "multiseed_results.png")

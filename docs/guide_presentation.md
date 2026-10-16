@@ -6,7 +6,7 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 
 ## 1-minute summary (say this first)
 
-"Our project classifies microscope images of oral tissue into four groups: **cancer (OSCC)**, **pre-cancer (leukoplakia with dysplasia)**, **leukoplakia without dysplasia**, and **normal tissue**. Our plan was two steps: first find the lesion with a segmentation model (**MedSAM**), then classify it with **ConvNeXt-Tiny**. We built and tested both. On the three classes from the main dataset, our classifier reaches **about 90% balanced accuracy (89.7 ± 1.4%, averaged over 3 training runs)**, close to the best published result (91.9%). We also discovered that the Normal class, which comes from a different dataset, can be recognised from image-level differences between the two datasets instead of tissue. We investigated and documented this carefully."
+"Our project classifies microscope images of oral tissue into four groups: **cancer (OSCC)**, **pre-cancer (leukoplakia with dysplasia)**, **leukoplakia without dysplasia**, and **normal tissue**. Our plan was two steps: first find the lesion with a segmentation model (**MedSAM**), then classify it with **ConvNeXt-Tiny**. We built and tested both. Our 4-class classifier reaches **about 92% balanced accuracy (92.2 ± 1.1%, averaged over 3 training runs)**. On the three classes that published papers use, it scores 90.0%, close to the best published result (91.9%). We also discovered that the Normal class, which comes from a different dataset, can be recognised from image-level differences between the two datasets instead of tissue. We investigated and documented this carefully."
 
 ---
 
@@ -15,10 +15,10 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 ### 1. Key results (top of README)
 **Show:** the results table.
 **Say:**
-- "Our main result is the **3-class model: 89.7% ± 1.4% balanced accuracy**. Balanced accuracy means it's about 90% right *for each class on average*, which is fairer than plain accuracy when some classes have fewer images."
-- "The ± is because we trained each model **3 times with different random starting points (seeds)** and took the average. Single runs varied by up to 2.5 points, so the average is the reliable number."
-- "The best published result on the same dataset and the same official split is 91.9%, so we're at the published level."
-- "We also have a 4-class model including Normal (92.2% ± 1.1%, with Normal at 99%). But we show that Normal's 99% comes from differences between the two datasets, not from the tissue. That's why the 3-class result is our main one."
+- "Our main result is the **4-class model: 92.2% ± 1.1% balanced accuracy**. Balanced accuracy means it's about 92% right *for each class on average*, which is fairer than plain accuracy when some classes have fewer images."
+- "The ± is because we trained the model **3 times with different random starting points (seeds)** and took the average. Single runs varied by about 2 points, so the average is the reliable number."
+- "Published papers only use the three NDB-UFES classes, because Normal is our addition. On those three classes our model scores 90.0%, and the best published result on the same official split is 91.9%. So we're at the published level."
+- "Normal itself reaches 99%, but we show that this comes partly from differences between the two datasets, not only from the tissue. We explain that in the Grad-CAM part."
 - "Segmentation didn't help on our data. I'll explain why."
 
 ### 2. Pipeline (flowchart)
@@ -53,10 +53,9 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 **Show:** the results table, confusion matrix and training curves.
 **Say:**
 - "We trained ConvNeXt-Tiny, a modern image model, starting from ImageNet-pretrained weights."
-- "We trained three versions:
+- "We trained two versions, each 3 times:
   - **4-class**: our main model;
-  - **3-class**: without Normal, to compare directly with papers;
-  - **greyscale**: to check whether colour was being used as a shortcut."
+  - **greyscale**: the same model without colour, to check whether colour was being used as a shortcut."
 - **Confusion matrix:** "Most mistakes are between *neighbouring* stages, cancer vs pre-cancer or pre-cancer vs no dysplasia. It never confuses cancer with the 'no dysplasia' class. Even pathologists find these neighbouring stages hard."
 
 ### 7. Explainability (Grad-CAM): the important discovery
@@ -68,7 +67,7 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 - "So the model was partly recognising *'this is a sharp image'* instead of *'this is normal tissue'*. That's called a **shortcut**."
 - "**Our fix:** we blurred the Normal images to match. Now sharpness can't tell them apart anymore (from 95% down to about 52%, which is chance level)."
 - "**Then we retrained and checked again:** Normal stayed at 99%, and the heatmaps still looked at the edges. So the model still uses other image-wide differences, mainly that the Normal images are brighter."
-- "**Our conclusion:** when you combine two datasets, the model can learn *which dataset* an image came from. Colour normalisation, tiling and blurring reduce this but can't fully remove it. That's why we treat the **3-class result** as our main result. Fixing it properly would need normal tissue from the same hospital as the other classes."
+- "**Our conclusion:** when you combine two datasets, the model can learn *which dataset* an image came from. Colour normalisation, tiling and blurring reduce this but can't fully remove it. That's why we report Normal's 99% with this caveat, and compare with published work only on the other three classes. Fixing it properly would need normal tissue from the same hospital as the other classes."
 
 ### 8. Limitations (be upfront; guides appreciate this)
 **Say:**
@@ -91,7 +90,7 @@ It opens in the browser at `http://localhost:8501`. The first start takes about 
 **Show:**
 1. **Try a test image** → pick an **OSCC** example: correct prediction, a confidence of about 90%+, and a heatmap on the tissue.
 2. Pick a **"without dysplasia"** example: the hardest class. If it's wrong, say "this is the class even pathologists find hardest".
-3. Switch the model in the sidebar to **3-class**: our main benchmark model.
+3. Pick a **Normal** example: the heatmap often sits at the tile's top edge, which is the shortcut we found.
 
 **Say:**
 - "The tool applies exactly the same steps as training: tiling, stain normalisation, then the model. We checked that it gives identical results to our test evaluation."
@@ -117,8 +116,8 @@ It opens in the browser at `http://localhost:8501`. The first start takes about 
 
 - **"Why didn't segmentation work?"** The images are already cut from inside the lesion, so the whole image is the lesion. MedSAM had nothing smaller to isolate.
 - **"Then why keep MedSAM in the project?"** We tested the hypothesis properly on all 6,626 images. A tested negative result is a valid research finding. Grad-CAM now does the "where is the problem" part.
-- **"Is 90% good?"** Yes. It's close to the best published result on this dataset (91.9%), about 2 points below, with the same official split. And ours is an average over 3 runs, not a single best run.
-- **"What does ± 1.4% mean?"** It's how much the result changes between training runs (standard deviation over 3 seeds). It shows the result is stable.
-- **"Why is your main result 3-class and not 4-class?"** The Normal images come from another dataset, and we proved the model partly recognises *which dataset* an image is from. The 3 main classes all come from one dataset, so that result is fair.
+- **"Is 92% good?"** Yes. On the three classes that published papers use, we score 90.0%, close to the best published result (91.9%) with the same official split. And ours is an average over 3 runs, not a single best run.
+- **"What does ± 1.1% mean?"** It's how much the result changes between training runs (standard deviation over 3 seeds). It shows the result is stable.
+- **"Why compare on three classes and not four?"** Published papers on this dataset only have those three classes; Normal is our addition. Those three also all come from one dataset, so the Normal shortcut doesn't affect that comparison.
 - **"How do you know the model isn't cheating?"** We checked with a colour test, a greyscale model, Grad-CAM heatmaps, and a sharpness test. That's how we found the Normal shortcut. We fixed sharpness and re-checked, and documented what remains.
 - **"Why Kaggle?"** Our laptop has no GPU. Kaggle gives a free GPU, and the code runs there directly from our GitHub repo.

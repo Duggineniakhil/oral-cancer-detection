@@ -15,8 +15,8 @@ Deep-learning pipeline for **four-class classification of oral histopathology pa
 
 | | Result |
 |---|---|
-| **3-class ConvNeXt-Tiny** (primary; NDB-UFES, test n = 627) | **89.7 ± 1.4% balanced accuracy · 89.6 ± 0.9% macro-F1 · 0.976 macro AUC** (published DenseNet-121 benchmark on the same folds: 91.9%) |
-| 4-class ConvNeXt-Tiny (+ Normal, test n = 1,049) | 92.2 ± 1.1% balanced accuracy · 92.0 ± 0.8% macro-F1 · Normal F1 99.3% (cross-dataset, see below) |
+| **4-class ConvNeXt-Tiny** (test, n = 1,049) | **92.2 ± 1.1% balanced accuracy · 92.0 ± 0.8% macro-F1 · 0.985 macro AUC** |
+| Same model, NDB-UFES classes only (OSCC, with / without dysplasia) | 90.0 ± 1.7% balanced accuracy (published DenseNet-121 benchmark on the same folds: 91.9%) |
 | **MedSAM segmentation** (all 6,626 patches) | Masks cover a median **95–98%** of each patch, so the ROI is the whole patch |
 | **Shortcut analysis** | The Normal class is separable by image-level properties of its source dataset (sharpness, brightness, contrast). Sharpness was removed by calibrated blur; Grad-CAM still shows border-focused, image-level evidence for Normal |
 
@@ -131,24 +131,23 @@ A meaningful segmentation target for this data would be the **epithelium**, wher
 
 ### Results (test set)
 
-All models are trained on the **sharpness-matched** data (see [Explainability](#explainability-grad-cam)). Each setting was trained with **3 random seeds** (`notebooks/convnext_multiseed_kaggle.ipynb`); values are **mean ± SD**.
+All models are trained on the **sharpness-matched** data (see [Explainability](#explainability-grad-cam)). Each model was trained with **3 random seeds** (`notebooks/convnext_multiseed_kaggle.ipynb`); values are **mean ± SD**.
 
-| Setting | Balanced acc. | Macro-F1 | Accuracy | Macro AUC | Normal F1 | NDB-UFES patches only (bal. acc.) |
+| Setting | Balanced acc. | Macro-F1 | Accuracy | Macro AUC | Normal F1 | NDB-UFES classes only (bal. acc.) |
 |---|---|---|---|---|---|---|
-| **3-class, NDB-UFES (primary)** | **89.7 ± 1.4%** | **89.6 ± 0.9%** | 90.2 ± 0.8% | 0.976 ± 0.003 | — | — |
-| 4-class | 92.2 ± 1.1% | 92.0 ± 0.8% | 93.8 ± 0.5% | 0.985 ± 0.001 | 99.3 ± 0.5% | 90.0 ± 1.7% |
+| **4-class** | **92.2 ± 1.1%** | **92.0 ± 0.8%** | 93.8 ± 0.5% | 0.985 ± 0.001 | 99.3 ± 0.5% | 90.0 ± 1.7% |
 | 4-class, greyscale | 90.5 ± 1.4% | 90.1 ± 1.6% | 92.0 ± 1.1% | 0.983 ± 0.001 | 98.0 ± 0.1% | 88.6 ± 1.9% |
 
 ![Multi-seed results](docs/images/multiseed_results.png)
 
-**Why 3-class is the primary result.** All three NDB-UFES classes come from the same source, so the cross-dataset shortcut described below cannot apply. This makes it the fair comparison with published work: **89.7 ± 1.4%** balanced accuracy vs **91.9%** for DenseNet-121 in Maia et al. (2024), on the same official folds. That is comparable to, and about 2 points below, the published benchmark.
+**Comparison with published work.** Published results on this dataset cover only the three NDB-UFES classes (Normal is our addition from a second dataset). On those classes, the 4-class model reaches **90.0 ± 1.7%** balanced accuracy, against **91.9%** for DenseNet-121 in Maia et al. (2024) on the same official folds: comparable, about 2 points lower. These three classes all come from one source, so the cross-dataset shortcut described below does not affect this number.
 
 **Reading the table**
-- **Adding Normal does not hurt the other classes.** On the NDB-UFES test patches, the 4-class model reaches 90.0 ± 1.7%, the same as the 3-class model within the spread. Its higher overall score comes mostly from the easy, cross-dataset Normal class.
+- **Normal lifts the overall score.** The 4-class score (92.2%) is higher than the score on the NDB-UFES classes alone (90.0%) mainly because the cross-dataset Normal class is easy (~99% F1).
 - **Greyscale input** costs about 1.7 points, within about one SD of the colour model. Colour helps a little but is not the main signal. Normal stays at ~98% F1 without colour.
-- **Seed variation matters.** Single runs of the same setting ranged over up to ~2.5 points (3-class: 88.0–90.5%). An earlier single 4-class run of 88.6% turned out to be a low outlier against the 3-seed mean of 92.2%.
+- **Seed variation matters.** Single runs of the same model ranged over up to ~2 points (4-class: 90.9–93.0%), and an earlier single 4-class run of 88.6% was a low outlier against the 3-seed mean of 92.2%.
 
-The confusion matrices, training curves and per-class F1 below come from one representative run per setting (seed 42).
+The confusion matrix, training curves and per-class F1 below come from one representative run (seed 42).
 
 ![Confusion matrix](docs/images/confusion_matrix.png)
 
@@ -190,7 +189,7 @@ Normal tiles are about 5× sharper. This global property explains both the borde
 **Conclusion.**
 - The high Normal score cannot be read as evidence that the model recognises normal tissue.
 - Combining two datasets creates source-level cues that colour normalisation, tiling and sharpness matching do not fully remove.
-- The **3-class NDB-UFES result is the primary benchmark**. The 4-class result is reported with this documented limitation.
+- The 4-class result is reported with this documented limitation; its score on the three NDB-UFES classes (90.0 ± 1.7%) is unaffected by it.
 
 ---
 
@@ -249,7 +248,7 @@ oral-cancer-detection/
 ├── notebooks/                      # Kaggle GPU notebooks
 │   ├── medsam_segmentation_kaggle.ipynb
 │   ├── convnext_training_kaggle.ipynb
-│   └── convnext_multiseed_kaggle.ipynb   # 3 settings × 3 seeds
+│   └── convnext_multiseed_kaggle.ipynb   # multi-seed runs (3 seeds)
 │
 └── docs/
     ├── guide_presentation.md       # Plain-language walkthrough for presenting the project
@@ -328,7 +327,7 @@ On test patches, the tool reproduces the evaluation predictions exactly (probabi
 
 ```bash
 # Command line: prints probabilities, saves overlay + JSON to outputs/predictions/
-python -m scripts.inference.predict path/to/image.png --model 4class   # or --model 3class
+python -m scripts.inference.predict path/to/image.png
 ```
 
 ![Prediction example](docs/images/prediction_example.jpg)
@@ -345,10 +344,10 @@ python -m scripts.inference.predict path/to/image.png --model 4class   # or --mo
 | Dataset construction, official splits, tiling, stain normalisation | ✅ Done |
 | Colour-bias analysis | ✅ Done |
 | MedSAM segmentation (full dataset) | ✅ Done (no localisation benefit on these patches) |
-| ConvNeXt-Tiny 4-class / 3-class / greyscale | ✅ Done |
+| ConvNeXt-Tiny 4-class + greyscale check | ✅ Done |
 | Grad-CAM + border-focus check | ✅ Done |
 | Identify the Normal shortcut (sharpness) and calibrate a blur fix | ✅ Done |
-| Retrain on sharpness-matched data + Grad-CAM re-check | ✅ Done (Normal still image-level; 3-class is primary) |
+| Retrain on sharpness-matched data + Grad-CAM re-check | ✅ Done (Normal still image-level; documented) |
 | Multi-seed runs (3 seeds, mean ± SD) | ✅ Done |
 | Prediction tool (command line) | ✅ Done |
 | Final report / paper write-up | ⏳ Next |

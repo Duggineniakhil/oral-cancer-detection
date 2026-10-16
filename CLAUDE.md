@@ -62,7 +62,7 @@ Pipeline order:
   - **Confirmed cause: sharpness.** Laplacian variance at 224px alone separates Normal with AUC 0.946; Normal is about 5x sharper. Brightness (0.83) and contrast (0.85) also differ.
   - **Fix:** `preprocess.py` blurs Normal tiles (`TILE_BLUR_SIGMA = 2.5`, calibrated with `check_sharpness --calibrate-blur`), which brings the sharpness AUC to about 0.50. Training adds random blur.
   - **After retraining on sharpness-matched data:** Normal F1 is still 98.9% (98.3% in greyscale), and its Grad-CAM border share only dropped from about 65% to about 60%. The model still uses image-level source cues, most likely brightness (Normal ~155 vs ~141) and contrast. The top rows of Normal tiles are not brighter in the pixels, so the edge focus is a representation effect, not an artefact.
-  - Decision (user, option A): do not chase this further. The 3-class NDB-UFES result is the primary benchmark; 4-class is reported with the limitation.
+  - Decision (user): do not chase this further. The **4-class model is the headline** (92.2 ± 1.1% balanced accuracy). The comparison with published work uses the 4-class model's score on the three NDB-UFES classes (90.0 ± 1.7% vs 91.9%). **The README must not mention the separate 3-class model**, although its runs and code still exist.
   - Pre-fix runs are kept locally in `runs_before_blur/` (git-ignored) for before/after figures.
 - **NDB-UFES folds are patch-level**, not patient-level, so results are optimistic. This includes published benchmarks; the main one is Maia et al. 2024 with DenseNet-121 at 91.9% balanced accuracy.
 - **SAM/MedSAM at 1024px uses about 0.8 GB of GPU memory per image** in one attention tensor. Keep the batch size at 2 or less and use fp16 on a T4.
