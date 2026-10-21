@@ -117,8 +117,14 @@ class CropDataset(Dataset):
     def __getitem__(self, i):
         item = self.items[i // self.per_image]
         image, mask = item["image"], item["mask"]
+        # Some images are smaller than the crop (e.g. 1435x916 at half scale);
+        # pad them so every crop in a batch has the same size
+        c = self.crop
+        ph, pw = max(0, c - mask.shape[0]), max(0, c - mask.shape[1])
+        if ph or pw:
+            image = np.pad(image, ((0, ph), (0, pw), (0, 0)), mode="reflect")
+            mask = np.pad(mask, ((0, ph), (0, pw)), mode="reflect")
         h, w = mask.shape
-        c = min(self.crop, h, w)
         y, x = random.randint(0, h - c), random.randint(0, w - c)
         image, mask = image[y:y + c, x:x + c], mask[y:y + c, x:x + c]
 
