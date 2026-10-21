@@ -20,21 +20,22 @@ dataset_3_rahman_oscc/
 # GENERATED DATA (re-create by running the scripts)
 # ============================================================
 
-master_dataset.csv
-splits/
-preprocessed/
-preprocessed_normalized/
-segmentation_subset_40/
-segmentation_subset/
-segmentation/
-kaggle_upload/
-runs/
-runs_before_blur/
-annotation/
-outputs/
-processed/
-masks/
-rois/
+# Anchored to the project root (a bare "segmentation/" also matched scripts/segmentation/)
+/master_dataset.csv
+/splits/
+/preprocessed/
+/preprocessed_normalized/
+/segmentation_subset_40/
+/segmentation_subset/
+/segmentation/
+/kaggle_upload/
+/runs/
+/runs_before_blur/
+/annotation/
+/outputs/
+/processed/
+/masks/
+/rois/
 
 # ============================================================
 # MODELS & WEIGHTS
@@ -98,3 +99,12 @@ Thumbs.db
 
 # Local Claude Code preview config
 .claude/launch.json
+
+# Hand-checked epithelium masks (small, needed for training on Kaggle)
+!annotations/
+!annotations/epithelium/
+!annotations/epithelium/masks/
+!annotations/epithelium/masks/*.png
+
+# MedSAM embeddings (large, regenerated on Kaggle)
+annotations/epithelium/embeddings/
