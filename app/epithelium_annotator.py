@@ -89,7 +89,7 @@ def image_embedding(image):
     if key not in st.session_state:
         precomputed = EMB_DIR / f"{Path(st.session_state.current).stem}.pt"
         if precomputed.exists():
-            st.session_state[key] = torch.load(precomputed).float()
+            st.session_state[key] = torch.load(precomputed, weights_only=True).float()
         else:
             processor, model = load_medsam()
             with torch.no_grad():
