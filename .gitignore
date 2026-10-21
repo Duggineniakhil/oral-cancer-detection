@@ -5,6 +5,7 @@
 datasets/
 dataset_1_ndb_ufes/
 dataset_2_normal/
+dataset_3_rahman_oscc/
 
 # Image files anywhere in the repo
 **/images/
