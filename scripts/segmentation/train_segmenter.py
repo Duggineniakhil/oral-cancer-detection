@@ -44,6 +44,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
 from oral_cancer.config import OUTPUT_ROOT, PROJECT_DIR, resolve
+from oral_cancer.segmenter import SCALE, THRESHOLD, build_segmenter, downscale, predict, to_tensor
 from oral_cancer.tissue import tissue_mask
 
 
@@ -55,17 +56,12 @@ SET_CSV = "annotations/epithelium/annotation_set.csv"
 LOG_CSV = "annotations/epithelium/annotations.csv"
 
 N_FOLDS = 5
-SCALE = 0.5            # working resolution relative to the original image
 CROP = 512             # training crop at working resolution
 CROPS_PER_IMAGE = 8    # crops per training image per epoch
 EPOCHS = 60
 BATCH_SIZE = 8
 LR = 3e-4
-THRESHOLD = 0.5
 SEED = 42
-
-MEAN = np.array([0.485, 0.456, 0.406], np.float32)
-STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
 # ============================================================
@@ -89,8 +85,8 @@ def load_items(scale):
     for row in rows.to_dict("records"):
         with Image.open(resolve(row["image_path"])) as im:
             im = im.convert("RGB")
-            size = (round(im.width * scale), round(im.height * scale))
-            image = np.asarray(im.resize(size, Image.BILINEAR))
+            image = downscale(im, scale)
+            size = (image.shape[1], image.shape[0])
         with Image.open(annotation_file(row["mask_path"])) as m:
             mask = np.asarray(m.convert("L").resize(size, Image.NEAREST)) > 127
 
@@ -98,11 +94,6 @@ def load_items(scale):
                       "zoom": row["estimated_zoom"], "fold": int(row["fold"]),
                       "image": image, "mask": mask})
     return items
-
-
-def to_tensor(image):
-    x = (image.astype(np.float32) / 255 - MEAN) / STD
-    return torch.from_numpy(x.transpose(2, 0, 1).copy())
 
 
 class CropDataset(Dataset):
@@ -145,27 +136,10 @@ class CropDataset(Dataset):
 # MODEL / EVALUATION
 # ============================================================
 
-def build_segmenter(pretrained=True):
-    import segmentation_models_pytorch as smp
-    return smp.Unet("resnet34", encoder_weights="imagenet" if pretrained else None, classes=1)
-
-
 def dice_loss(logits, target):
     p = torch.sigmoid(logits)
     inter = (p * target).sum((1, 2, 3))
     return 1 - ((2 * inter + 1) / (p.sum((1, 2, 3)) + target.sum((1, 2, 3)) + 1)).mean()
-
-
-@torch.no_grad()
-def predict(model, image, device):
-    """Probability map for a whole image (padded to a multiple of 32)."""
-    model.eval()
-    x = to_tensor(image)[None].to(device)
-    h, w = x.shape[-2:]
-    x = F.pad(x, (0, -w % 32, 0, -h % 32), mode="reflect")
-    with torch.autocast(device.type, enabled=device.type == "cuda"):
-        logits = model(x)
-    return torch.sigmoid(logits.float())[0, 0, :h, :w].cpu().numpy()
 
 
 def scores(pred, truth):
@@ -232,7 +206,7 @@ def train_round(k, items, args, device, out_dir):
         if val_dice > best:
             best = val_dice
             torch.save({"state_dict": model.state_dict(), "epoch": epoch, "val_dice": val_dice,
-                        "scale": args.scale, "encoder": "resnet34"}, round_dir / "best_model.pt")
+                        "scale": args.scale}, round_dir / "best_model.pt")
         print(f"epoch {epoch:3d}  loss {total / len(loader):.4f}  val Dice {val_dice:.4f}"
               f"{'  *' if val_dice == best else ''}  ({time.time() - t0:.0f}s)")
 
