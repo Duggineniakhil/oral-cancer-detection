@@ -455,22 +455,198 @@ def fig_border_check():
     clean_axes(ax, grid_axis="x")
     save(fig, "gradcam_border_check.png")
 
+# ============================================================
+# 9. WHOLE IMAGES: EPITHELIUM SEGMENTATION
+# ============================================================
+
+SEG_RUN = RUNS / "segmenter"
+SOURCE_LABELS = {"Dataset2_Normal": "Rahman", "Dataset3_Rahman_OSCC": "Rahman", "NDB-UFES": "NDB-UFES"}
+
+
+def overlay(image, mask, color=(27, 175, 122)):
+    out = image.astype(np.float32)
+    out[mask] = 0.55 * out[mask] + 0.45 * np.array(color)
+    return out.astype(np.uint8)
+
+
+def fig_epithelium_segmentation():
+    per_image = pd.read_csv(SEG_RUN / "test_per_image.csv")
+    log = pd.read_csv(PROJECT_DIR / "annotations" / "epithelium" / "annotations.csv")
+    per_image = per_image.merge(log[["image_path", "mask_path"]], on="image_path")
+
+    # One 10x image per source and class: the one with the MEDIAN segmenter
+    # Dice of its group, so the figure shows typical (not best) cases
+    rows = []
+    for _, g in per_image[per_image["zoom"] == "10x"].groupby(["source", "class"]):
+        rows.append(g.iloc[(g["segmenter_dice"] - g["segmenter_dice"].median()).abs().argsort().iloc[0]])
+
+    fig, axes = plt.subplots(len(rows), 3, figsize=(10, 2.75 * len(rows)))
+    for ax_row, row in zip(axes, rows):
+        stem = row["image_path"].rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        with Image.open(resolve(row["image_path"])) as im:
+            image = im.convert("RGB")
+            size = (image.width // 4, image.height // 4)
+            image = np.asarray(image.resize(size, Image.LANCZOS))
+        with Image.open(PROJECT_DIR / row["mask_path"]) as m:
+            truth = np.asarray(m.convert("L").resize(size, Image.NEAREST)) > 127
+        with Image.open(resolve(f"segmentation/whole_images/{stem}.png")) as m:
+            pred = np.asarray(m.convert("L").resize(size, Image.NEAREST)) > 127
+
+        name = CLASS_LABELS[row["class"]].replace("\n", " ")
+        panels = [
+            (image, f"{name} · {SOURCE_LABELS[row['source']]} · 10x"),
+            (overlay(image, truth), "Annotation"),
+            (overlay(image, pred), f"Segmenter · Dice {row['segmenter_dice']:.2f} (all tissue: {row['tissue_dice']:.2f})"),
+        ]
+        for ax, (img, title) in zip(ax_row, panels):
+            ax.imshow(img)
+            ax.set_title(title, fontsize=9, loc="left", fontweight="normal")
+            ax.axis("off")
+
+    fig.suptitle("Epithelium segmentation on held-out whole images (green = epithelium; median-Dice example per group)",
+                 fontweight="bold", y=0.997, fontsize=11)
+    fig.text(0.5, 0.003, "NDB-UFES (CC BY 4.0) and Rahman et al. (CC BY 4.0). "
+             "Annotations are MedSAM-assisted, not expert-verified.",
+             ha="center", fontsize=8, color=TEXT_SECONDARY)
+    plt.tight_layout(rect=(0, 0.012, 1, 0.985))
+    save(fig, "epithelium_segmentation.jpg", photo=True)
+
+
+def fig_segmenter_dice():
+    per_image = pd.read_csv(SEG_RUN / "test_per_image.csv")
+    methods = [("segmenter", "U-Net segmenter"), ("tissue", "All tissue = epithelium"), ("whole", "Whole image")]
+    groups = [("All 50 images", per_image), ("10x", per_image[per_image["zoom"] == "10x"]),
+              ("40x", per_image[per_image["zoom"] == "40x"])]
+
+    fig, ax = plt.subplots(figsize=(9, 3.8))
+    x = np.arange(len(groups))
+    width = 0.26
+    for k, (method, label) in enumerate(methods):
+        vals = [g[f"{method}_dice"].mean() for _, g in groups]
+        bars = ax.bar(x + (k - 1) * (width + 0.02), vals, width, color=SERIES[k], label=label)
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.008, f"{v:.2f}", ha="center", fontsize=9)
+
+    ax.set_xticks(x, [label for label, _ in groups])
+    ax.set_ylim(0.5, 1.0)
+    ax.set_ylabel("Mean Dice vs annotation")
+    ax.set_title("Epithelium segmentation, patient-level 5-fold CV (50 annotated whole images)", loc="left")
+    ax.legend(loc="upper left", ncol=3)
+    clean_axes(ax)
+    save(fig, "segmenter_dice.png")
+
+
+# ============================================================
+# 10. WHOLE IMAGES: ROI VS ALL-TISSUE CLASSIFICATION
+# ============================================================
+
+def fig_roi_results():
+    per_round_csv = RUNS / "roi_per_round.csv"
+    if not per_round_csv.exists():
+        print("  (skipping ROI figures: run summarize_roi first)")
+        return
+
+    per_round = pd.read_csv(per_round_csv)
+    metrics = [
+        ("image_balanced_accuracy", "Balanced accuracy"),
+        ("image_macro_f1", "Macro-F1"),
+        ("image_balanced_accuracy_10x", "Balanced accuracy, 10x"),
+        ("ndb_image_balanced_accuracy", "Balanced accuracy,\nNDB-UFES images only"),
+    ]
+    settings = [("all", "All tissue tiles (no segmentation)"), ("roi", "Epithelium tiles (ROI)")]
+
+    fig, ax = plt.subplots(figsize=(9, 4.2))
+    y = np.arange(len(metrics))[::-1].astype(float)
+    for k, (setting, label) in enumerate(settings):
+        offset = 0.17 - k * 0.34
+        for yi, (metric, _) in zip(y, metrics):
+            vals = per_round.loc[per_round["setting"] == setting, metric].values * 100
+            mean, sd = vals.mean(), vals.std(ddof=1)
+            ax.plot([mean - sd, mean + sd], [yi + offset] * 2, color=SERIES[k], linewidth=6,
+                    solid_capstyle="round", alpha=0.3)
+            ax.scatter(vals, [yi + offset] * len(vals), s=22, color=SERIES[k], edgecolor=SURFACE,
+                       linewidth=1, zorder=3)
+            ax.plot(mean, yi + offset, "D", color=SERIES[k], markeredgecolor=TEXT_PRIMARY, markersize=7, zorder=4,
+                    label=label if yi == y[0] else None)
+            ax.text(101, yi + offset, f"{mean:.1f} ± {sd:.1f}", va="center", fontsize=8.5, color=SERIES[k])
+
+    ax.set_yticks(y, [label for _, label in metrics])
+    ax.set_xlim(30, 100)
+    ax.set_xlabel("Whole-image score (%): dots = 5 patient-level folds, diamond = mean, band = ± SD")
+    ax.set_title("Classifying only the segmented epithelium does not help", loc="left")
+    ax.legend(loc="lower right", fontsize=8.5)
+    clean_axes(ax, grid_axis="x")
+    save(fig, "roi_results.png")
+
+
+def fig_roi_by_source():
+    preds_csv = RUNS / "roi_image_predictions.csv"
+    if not preds_csv.exists():
+        return
+
+    images = pd.read_csv(preds_csv)
+    images = images[images["setting"] == "all"]
+    rows = [
+        ("Dataset2_Normal", "Normal", "Normal (Rahman)"),
+        ("Dataset3_Rahman_OSCC", "OSCC", "OSCC (Rahman)"),
+        ("NDB-UFES", "OSCC", "OSCC (NDB-UFES)"),
+        ("NDB-UFES", "Leukoplakia_with_dysplasia", "With dysplasia (NDB-UFES)"),
+        ("NDB-UFES", "Leukoplakia_without_dysplasia", "Without dysplasia (NDB-UFES)"),
+    ]
+    counts = np.array([
+        [((images["source"] == src) & (images["class"] == cls) & (images["predicted"] == p)).sum() for p in CLASSES_4]
+        for src, cls, _ in rows
+    ])
+    share = counts / counts.sum(axis=1, keepdims=True)
+
+    fig, ax = plt.subplots(figsize=(8.6, 4.8))
+    ax.imshow(share, cmap="Blues", vmin=0, vmax=1)
+    for i in range(len(rows)):
+        for j in range(len(CLASSES_4)):
+            ax.text(j, i, f"{100 * share[i, j]:.0f}%\n({counts[i, j]})", ha="center", va="center", fontsize=8.5,
+                    color="white" if share[i, j] > 0.5 else TEXT_PRIMARY)
+    short = ["OSCC", "With\ndysplasia", "Without\ndysplasia", "Normal"]
+    ax.set_xticks(range(len(CLASSES_4)), short, fontsize=9)
+    ax.set_yticks(range(len(rows)), [label for _, _, label in rows], fontsize=9)
+    ax.set_xlabel("Predicted")
+    ax.set_title("Whole images (all-tissue setting): predictions follow the source dataset", loc="left")
+    for side in ax.spines.values():
+        side.set_visible(False)
+    save(fig, "roi_by_source.png")
+
 
 # ============================================================
 # MAIN
 # ============================================================
 
+FIGURES = {
+    "dataset_samples": lambda: fig_dataset_samples(PRE),
+    "preprocessing": lambda: fig_preprocessing(PRE, NORM),
+    "segmentation_coverage": fig_segmentation_coverage,
+    "training_curves": fig_training_curves,
+    "confusion_matrix": fig_confusion_matrix,
+    "per_class_f1": fig_per_class_f1,
+    "multiseed": fig_multiseed,
+    "gradcam": fig_gradcam,
+    "border_check": fig_border_check,
+    "epithelium_segmentation": fig_epithelium_segmentation,
+    "segmenter_dice": fig_segmenter_dice,
+    "roi_results": fig_roi_results,
+    "roi_by_source": fig_roi_by_source,
+}
+
 if __name__ == "__main__":
-    pre = pd.read_csv(resolve("splits/preprocessed_dataset.csv"))
-    norm = pd.read_csv(resolve("splits/normalized_dataset.csv"))
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate the README figures (docs/images/)")
+    parser.add_argument("--only", nargs="+", choices=list(FIGURES), help="Generate only these figures")
+    args = parser.parse_args()
+
+    names = args.only or list(FIGURES)
+    if {"dataset_samples", "preprocessing"} & set(names):
+        PRE = pd.read_csv(resolve("splits/preprocessed_dataset.csv"))
+        NORM = pd.read_csv(resolve("splits/normalized_dataset.csv"))
 
     print("Writing figures:")
-    fig_dataset_samples(pre)
-    fig_preprocessing(pre, norm)
-    fig_segmentation_coverage()
-    fig_training_curves()
-    fig_confusion_matrix()
-    fig_per_class_f1()
-    fig_multiseed()
-    fig_gradcam()
-    fig_border_check()
+    for name in names:
+        FIGURES[name]()

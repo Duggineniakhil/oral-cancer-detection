@@ -5,9 +5,9 @@
 ![Hugging Face](https://img.shields.io/badge/MedSAM-Hugging%20Face-FFD21E?logo=huggingface&logoColor=black)
 ![Kaggle](https://img.shields.io/badge/GPU-Kaggle%20T4-20BEFF?logo=kaggle&logoColor=white)
 
-Deep-learning pipeline for **four-class classification of oral histopathology patches**: oral squamous cell carcinoma (OSCC), leukoplakia with dysplasia, leukoplakia without dysplasia, and normal mucosa. It also investigates whether **MedSAM lesion segmentation** before classification helps.
+Deep-learning pipeline for **four-class classification of oral histopathology images**: oral squamous cell carcinoma (OSCC), leukoplakia with dysplasia, leukoplakia without dysplasia, and normal mucosa. It also investigates whether **segmentation before classification** helps, first with MedSAM on patches, then with a trained epithelium segmenter on whole microscope images (segmentation → ROI → classification).
 
-> **Research question:** does localising the lesion with MedSAM before classifying it with ConvNeXt-Tiny give the classifier a better input than the whole patch?
+> **Research question:** does localising the relevant tissue before classifying it with ConvNeXt-Tiny give the classifier a better input than the whole image?
 
 ---
 
@@ -19,8 +19,10 @@ Deep-learning pipeline for **four-class classification of oral histopathology pa
 | Same model, NDB-UFES classes only (OSCC, with / without dysplasia) | 90.0 ± 1.7% balanced accuracy (published DenseNet-121 benchmark on the same folds: 91.9%) |
 | **MedSAM segmentation** (all 6,626 patches) | Masks cover a median **95–98%** of each patch, so the ROI is the whole patch |
 | **Shortcut analysis** | The Normal class is separable by image-level properties of its source dataset (sharpness, brightness, contrast). Sharpness was removed by calibrated blur; Grad-CAM still shows border-focused, image-level evidence for Normal |
+| **Epithelium segmenter** (U-Net, 50 annotated whole images, patient-level CV) | **Dice 0.85** vs 0.80 for "all tissue" and 0.78 for the whole image; 0.81 vs 0.77 / 0.71 on 10× images |
+| **Segmentation → ROI → classification** (1,461 whole images, patient-level CV) | **70.4 ± 1.4%** image-level balanced accuracy with epithelium tiles vs **71.7 ± 4.9%** with all tissue tiles: **no gain** from the ROI |
 
-Classification results are **mean ± SD over 3 random seeds**, on the official NDB-UFES test fold. See [Limitations](#limitations).
+Patch results are **mean ± SD over 3 random seeds** on the official NDB-UFES test fold; whole-image results are mean ± SD over 5 patient-level folds. See [Limitations](#limitations).
 
 ---
 
@@ -32,12 +34,13 @@ Classification results are **mean ± SD over 3 random seeds**, on the official N
 4. [Segmentation (MedSAM)](#segmentation-medsam)
 5. [Classification (ConvNeXt-Tiny)](#classification-convnext-tiny)
 6. [Explainability (Grad-CAM)](#explainability-grad-cam)
-7. [Limitations](#limitations)
-8. [Project structure](#project-structure)
-9. [Getting started](#getting-started)
-10. [Prediction tool](#prediction-tool)
-11. [Project status](#project-status)
-12. [References](#references)
+7. [Whole images: segmentation → ROI → classification](#whole-images-segmentation--roi--classification)
+8. [Limitations](#limitations)
+9. [Project structure](#project-structure)
+10. [Getting started](#getting-started)
+11. [Prediction tool](#prediction-tool)
+12. [Project status](#project-status)
+13. [References](#references)
 
 ---
 
@@ -56,6 +59,19 @@ flowchart LR
 
 MedSAM was implemented and run on the full dataset. Its masks covered almost the entire patch, so the classifier is trained on **whole patches**; see [Segmentation](#segmentation-medsam).
 
+A second pipeline works on the **whole microscope images**, where there is something to segment (epithelium vs connective tissue and glass):
+
+```mermaid
+flowchart LR
+    A[Whole images<br/>NDB-UFES + Rahman] --> B[Patient-level<br/>5-fold split]
+    B --> C[U-Net epithelium<br/>segmenter]
+    C --> D[ROI tiles<br/>≥ 50% epithelium]
+    B --> E[All tissue tiles<br/>no segmentation]
+    D --> F[ConvNeXt-Tiny<br/>4-class]
+    E --> F
+    F --> G[Image-level<br/>comparison]
+```
+
 ---
 
 ## Datasets
@@ -63,7 +79,9 @@ MedSAM was implemented and run on the full dataset. Its masks covered almost the
 | Dataset | Used for | Images | Licence |
 |---|---|---|---|
 | **NDB-UFES** (de Assis et al., 2023) | OSCC, leukoplakia with / without dysplasia | 3,763 patches (512×512) from 237 images, 69 patients | CC BY 4.0 |
-| **Histopathological imaging database for oral cancer** (Rahman et al., 2020) | Normal only | 290 images (2048×1536; 89 at 100×, 201 at 400×) → 2,863 tiles | CC BY 4.0 |
+| **Histopathological imaging database for oral cancer** (Rahman et al., 2020) | Normal (patch pipeline); Normal + OSCC (whole-image pipeline) | 290 Normal images (2048×1536; 89 at 100×, 201 at 400×) → 2,863 tiles; 934 OSCC images (439 at 100×, 495 at 400×) | CC BY 4.0 |
+
+The whole-image pipeline uses the 237 NDB-UFES source images (2048×1536: 91 OSCC, 89 with dysplasia, 57 without dysplasia) together with all 1,224 Rahman images: **1,461 images** in total.
 
 Both datasets were captured with a Leica ICC50 HD camera at 2048×1536 using 10× / 40× objectives. They are stored locally and are not part of this repository.
 
@@ -116,7 +134,7 @@ MedSAM (ViT-B) was run on **all 6,626 patches** on a Kaggle T4 GPU (~40 min). Ea
 
 **Why.** NDB-UFES patches are already cropped from *inside* the lesion, so there is no separate lesion region for a promptable segmenter to isolate. Classification therefore uses **whole patches**.
 
-A meaningful segmentation target for this data would be the **epithelium**, where dysplasia is graded. That requires manual annotations and is listed as future work.
+A meaningful segmentation target is the **epithelium**, where dysplasia is graded. On the whole microscope images it is a real region (next to connective tissue and glass), so it was annotated and segmented there; see [Whole images](#whole-images-segmentation--roi--classification).
 
 ---
 
@@ -193,12 +211,71 @@ Normal tiles are about 5× sharper. This global property explains both the borde
 
 ---
 
+## Whole images: segmentation → ROI → classification
+
+Patches are already crops from inside the lesion, so segmentation had nothing to isolate. The **whole microscope images** are different: at 10× they show epithelium, connective tissue, muscle and empty glass. This experiment tests the full segmentation → ROI → classification pipeline on them.
+
+### Data and splits
+- **1,461 whole images:** the 237 NDB-UFES source images plus the 1,224 Rahman images (290 Normal, 934 OSCC).
+- **Patient-level 5-fold cross-validation.** NDB-UFES images are grouped by patient (69 patients), so no patient is in both training and test. Rahman images have no patient IDs, so each image is its own group; folds are stratified by class and magnification. In round *k*, fold *k* is the test set and the next fold is the validation set.
+- **Magnification is not a shortcut.** A nucleus-size estimator (`scripts/analysis/check_magnification.py`; 95% accurate on held-out images) finds about half of every class at 10× and half at 40×.
+
+### Epithelium segmentation
+- **Annotations.** 50 whole images (5 per source × class × magnification, 10 per fold) were annotated with MedSAM box prompts plus manual corrections. They are **AI-assisted and not verified by a pathologist**, so the scores below measure agreement with these masks.
+- **Model.** U-Net with an ImageNet ResNet-34 encoder, trained at half resolution (1024×768) on random 512×512 crops with flips, rotations and colour jitter. Same patient-level folds; the best epoch is chosen on validation Dice.
+
+![Segmenter Dice](docs/images/segmenter_dice.png)
+
+| Method (test folds, 50 images) | Dice | IoU | Dice, 10× | Dice, 40× |
+|---|---|---|---|---|
+| **U-Net segmenter** | **0.847** | **0.763** | **0.808** | **0.885** |
+| All tissue counts as epithelium | 0.798 | 0.699 | 0.771 | 0.824 |
+| Whole image | 0.779 | 0.687 | 0.712 | 0.847 |
+
+The segmenter beats both baselines, most clearly on 10× images. It is weakest on Rahman Normal images at 10× (Dice ~0.5), a group with only 5 annotated images.
+
+![Epithelium segmentation examples](docs/images/epithelium_segmentation.jpg)
+
+### ROI vs all tissue
+Every whole image was segmented by the model of the round that held out its fold, then cut into native 512×512 tiles (blur on all Rahman tiles, Macenko normalisation). Two tile sets were classified with the same ConvNeXt-Tiny setup:
+- **all:** every tile with ≥ 60% tissue (no segmentation);
+- **ROI:** every tile with ≥ 50% predicted epithelium.
+
+Each whole image is scored by averaging the class probabilities of its tiles. Both settings cover exactly the same 1,461 images.
+
+![ROI results](docs/images/roi_results.png)
+
+| Image-level, mean ± SD over 5 folds | All tissue tiles | Epithelium tiles (ROI) |
+|---|---|---|
+| Balanced accuracy | **71.7 ± 4.9%** | 70.4 ± 1.4% |
+| Macro-F1 | **67.3 ± 5.3%** | 64.3 ± 0.6% |
+| Balanced accuracy, 10× images | 72.4 ± 9.2% | 71.0 ± 5.2% |
+| Balanced accuracy, NDB-UFES images only | 54.5 ± 12.8% | 49.6 ± 4.4% |
+
+**Finding: the ROI does not help.** The two settings differ by less than their fold-to-fold spread and give the same answer for 92% of images; the ROI version is only more stable across folds. This also holds on 10× images, where segmentation removes the most non-epithelial tissue.
+
+### Why: the source dataset dominates
+
+![Predictions by source](docs/images/roi_by_source.png)
+
+- NDB-UFES images are **never** predicted Normal, and Rahman images are almost never predicted leukoplakia.
+- Most OSCC images come from Rahman, so 45% of NDB-UFES OSCC images are called leukoplakia.
+- Within one source the picture differs: Rahman Normal vs OSCC is about 91% correct, but NDB-UFES with vs without dysplasia is close to chance.
+
+Removing stroma cannot remove a cue that is present in the epithelium tiles too. With patient-level folds, NDB-UFES whole-image accuracy (~50–55%) is far below the patch-level result (90.0%), whose folds share patients between training and test.
+
+**Conclusion.** Segmentation → ROI → classification is implemented end to end and evaluated step by step: the segmenter learns the epithelium (Dice 0.85), but restricting the classifier to it does not improve whole-image classification on this mixed-source data.
+
+---
+
 ## Limitations
 
 - **Patch-level folds.** The official NDB-UFES folds were created by stratified K-fold over *patches*, not patients. Patches from the same patient can appear in training and test, so all NDB-UFES results, including published ones, are likely optimistic.
 - **Cross-dataset Normal class.** Normal comes from a different institution. Sharpness, brightness and contrast differ between the sources. Even after sharpness matching, Grad-CAM shows Normal is recognised from image-level properties, so the Normal score (~99% F1) is not evidence of tissue-level recognition. A Normal class from the same institution as the other classes would be needed to remove this.
 - **Few seeds.** Results are averaged over 3 seeds. Seed-to-seed spread is 1–2 points (SD), so differences smaller than that between settings are not meaningful.
-- **No ground-truth masks.** Segmentation quality (Dice/IoU) cannot be measured without reference annotations.
+- **Patch-level vs patient-level results.** On whole images with patient-level folds, accuracy on the NDB-UFES classes drops to about 50–55%, which shows how much the patch-level folds inflate results.
+- **Mixed sources in the whole-image pipeline.** Normal and most OSCC images come from Rahman et al., the leukoplakia classes only from NDB-UFES. The classifier learns the source, so its 4-class whole-image score is not a measure of tissue recognition.
+- **Epithelium annotations.** The 50 masks are MedSAM-assisted and not verified by a pathologist; Dice scores measure agreement with them. MedSAM on the patches has no reference masks at all.
 
 ---
 
@@ -215,6 +292,7 @@ oral-cancer-detection/
 │   ├── model.py                    # ConvNeXt-Tiny, transforms, Grad-CAM
 │   ├── stain.py                    # Macenko stain normalisation
 │   ├── tissue.py                   # Tiling + tissue detection
+│   ├── segmenter.py                # U-Net epithelium segmenter (whole images)
 │   ├── predictor.py                # Image → class probabilities + Grad-CAM
 │   └── assets/macenko_reference.npz  # Stain reference (fitted on NDB-UFES train)
 │
@@ -225,20 +303,30 @@ oral-cancer-detection/
 │   │   ├── create_splits.py
 │   │   ├── preprocess.py           # Tiling + tissue filter
 │   │   ├── stain_normalize.py      # Macenko normalisation
-│   │   └── make_kaggle_upload.py   # Zip data for a Kaggle Dataset
+│   │   ├── make_kaggle_upload.py   # Zip data for a Kaggle Dataset
+│   │   ├── create_whole_image_splits.py  # Patient-level folds for whole images
+│   │   ├── tile_whole_images.py    # All-tissue and ROI tile sets per round
+│   │   ├── make_annotation_upload.py
+│   │   └── make_whole_image_upload.py
 │   ├── analysis/                   # Data inspection & bias checks
 │   │   ├── inspect_images.py
 │   │   ├── inspect_samples.py
 │   │   ├── visualize_dataset.py
 │   │   ├── check_color_shortcut.py
-│   │   └── check_sharpness.py      # Single-property shortcut test + blur calibration
-│   ├── segmentation/               # MedSAM
+│   │   ├── check_sharpness.py      # Single-property shortcut test + blur calibration
+│   │   └── check_magnification.py  # 10x vs 40x from nucleus size
+│   ├── segmentation/               # MedSAM (patches) and epithelium segmenter (whole images)
 │   │   ├── auto_segment.py
 │   │   ├── select_subset.py
-│   │   └── prepare_annotation_set.py
+│   │   ├── prepare_annotation_set.py
+│   │   ├── select_epithelium_set.py   # 50 whole images to annotate
+│   │   ├── precompute_embeddings.py   # MedSAM embeddings for annotation
+│   │   ├── train_segmenter.py         # U-Net, patient-level CV
+│   │   └── segment_whole_images.py    # Masks for all whole images
 │   ├── classification/             # ConvNeXt-Tiny
 │   │   ├── train_classifier.py
 │   │   ├── summarize_seeds.py      # Mean ± SD over multi-seed runs
+│   │   ├── summarize_roi.py        # Image-level ROI vs all-tissue comparison
 │   │   └── gradcam.py
 │   ├── inference/
 │   │   └── predict.py              # Command-line prediction
@@ -248,13 +336,18 @@ oral-cancer-detection/
 ├── notebooks/                      # Kaggle GPU notebooks
 │   ├── medsam_segmentation_kaggle.ipynb
 │   ├── convnext_training_kaggle.ipynb
-│   └── convnext_multiseed_kaggle.ipynb   # multi-seed runs (3 seeds)
+│   ├── convnext_multiseed_kaggle.ipynb   # multi-seed runs (3 seeds)
+│   ├── medsam_embeddings_kaggle.ipynb    # embeddings for annotation
+│   ├── segmenter_training_kaggle.ipynb   # epithelium segmenter only
+│   └── roi_classification_kaggle.ipynb   # segmenter → ROI → classification
+│
+├── annotations/epithelium/         # annotation_set.csv, annotations.csv, masks/ (50 PNG masks)
 │
 └── docs/
     ├── guide_presentation.md       # Plain-language walkthrough for presenting the project
     └── images/                     # Figures used in this README
 
-# Local only (git-ignored): dataset_1_ndb_ufes/, dataset_2_normal/, splits/,
+# Local only (git-ignored): dataset_1_ndb_ufes/, dataset_2_normal/, dataset_3_rahman_oscc/, splits/,
 # preprocessed/, preprocessed_normalized/, segmentation/, runs/, outputs/
 ```
 
@@ -273,9 +366,12 @@ pip install -r requirements.txt
 ```text
 dataset_1_ndb_ufes/
 ├── images/              # p0000.png ... (NDB-UFES patches)
-└── metadata/            # sabpatch_parsed_folders.csv, sabpatch_parsed_test.csv
+├── whole_images/extracted/images/   # 0000.png ... (237 source images)
+└── metadata/            # sabpatch_parsed_*.csv, ndb-ufes.csv
 dataset_2_normal/
 └── images/              # Normal_100x_*.jpg, Normal_400x_*.jpg
+dataset_3_rahman_oscc/
+└── images/              # OSCC_100x_*.jpg, OSCC_400x_*.jpg (whole-image pipeline only)
 ```
 
 ### Run the pipeline
@@ -302,6 +398,16 @@ python -m scripts.classification.gradcam --border-check
 python -m scripts.reporting.make_readme_figures
 ```
 
+Whole-image pipeline (segmentation → ROI → classification):
+
+```bash
+python -m scripts.data.create_whole_image_splits         # patient-level folds
+python -m scripts.data.make_whole_image_upload           # zip for Kaggle
+# On Kaggle, notebooks/roi_classification_kaggle.ipynb runs:
+#   train_segmenter → segment_whole_images → tile_whole_images → train_classifier (10 runs) → summarize_roi
+python -m scripts.reporting.make_readme_figures --only epithelium_segmentation segmenter_dice roi_results roi_by_source
+```
+
 Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` (inputs) and `ORAL_CANCER_OUTPUT_ROOT` (outputs). Paths inside CSV files are relative, so the CSVs work on any machine.
 
 ### Running on Kaggle (GPU)
@@ -309,7 +415,7 @@ Paths default to the project folder. Override them with `ORAL_CANCER_DATA_ROOT` 
 1. `python -m scripts.data.make_kaggle_upload` creates `kaggle_upload/oral-cancer-data.zip` containing `splits/` and `preprocessed_normalized/`.
 2. Upload it as a Kaggle Dataset. Private is recommended; both sources are CC BY 4.0, so credit them if you share it.
 3. Import a notebook from `notebooks/`, add the dataset as input, and enable **GPU T4** and **Internet**.
-4. Use **Save Version → Save & Run All**, then download the outputs (`segmentation.zip` / `runs.zip`).
+4. Use **Save Version → Save & Run All**, then download the outputs (`segmentation.zip` / `runs.zip` / `roi_results.zip`).
 
 ---
 
@@ -350,8 +456,10 @@ python -m scripts.inference.predict path/to/image.png
 | Retrain on sharpness-matched data + Grad-CAM re-check | ✅ Done (Normal still image-level; documented) |
 | Multi-seed runs (3 seeds, mean ± SD) | ✅ Done |
 | Prediction tool (command line) | ✅ Done |
+| Whole images: patient-level folds, magnification check, Rahman OSCC added | ✅ Done |
+| Epithelium annotation (50 images, MedSAM-assisted) + U-Net segmenter | ✅ Done (Dice 0.85) |
+| Segmentation → ROI → classification on whole images | ✅ Done (no gain over all tissue; source shortcut documented) |
 | Final report / paper write-up | ⏳ Next |
-| Epithelium segmentation with manual annotations | 💡 Optional |
 
 ---
 

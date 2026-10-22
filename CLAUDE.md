@@ -7,6 +7,7 @@ Guidance for AI-assisted work on this repository. See README.md for the full wri
 Four-class classification of oral histopathology patches (OSCC, leukoplakia with dysplasia, leukoplakia without dysplasia, Normal) with ConvNeXt-Tiny. It also tests whether MedSAM segmentation before classification helps. Data:
 - **NDB-UFES:** 3,763 patches of 512×512 with official folds.
 - **Normal:** 290 images from Rahman et al., tiled into 2,863 patches of 512×512.
+- **Whole-image pipeline:** the 237 NDB-UFES source images (2048×1536, 69 patients) plus 1,224 Rahman images (290 Normal, 934 OSCC in `dataset_3_rahman_oscc/`), 1,461 in total.
 
 Both datasets are CC BY 4.0.
 
@@ -18,7 +19,7 @@ Both datasets are CC BY 4.0.
 
 ## Commands
 
-Shared code lives in the `oral_cancer/` package: `config`, `model` (ConvNeXt, transforms, GradCAM), `stain` (Macenko), `tissue` (tiling and tissue mask) and `predictor`. Scripts import from it; don't duplicate it.
+Shared code lives in the `oral_cancer/` package: `config`, `model` (ConvNeXt, transforms, GradCAM), `stain` (Macenko), `tissue` (tiling and tissue mask), `segmenter` (U-Net epithelium segmenter) and `predictor`. Scripts import from it; don't duplicate it.
 
 Always run scripts **as modules from the project root**:
 
@@ -37,6 +38,11 @@ Pipeline order:
 5. Then on Kaggle: `auto_segment` / `train_classifier`
 6. Then locally: `gradcam`, then `make_readme_figures`
 
+Whole-image pipeline (segmentation → ROI → classification):
+1. Locally: `create_whole_image_splits`, then `make_whole_image_upload`
+2. On Kaggle, `notebooks/roi_classification_kaggle.ipynb`: `train_segmenter` → `segment_whole_images` → `tile_whole_images` → `train_classifier` (2 settings × 5 rounds, runs `roi_<all|roi>_round<k>`) → `summarize_roi`
+3. Locally: `make_readme_figures --only epithelium_segmentation segmenter_dice roi_results roi_by_source`
+
 ## Conventions
 
 - **Paths:** never hard-code absolute paths. Import from `oral_cancer.config`:
@@ -49,6 +55,7 @@ Pipeline order:
   - Normal is split **by source image before tiling**.
   - Never re-split randomly by patch.
   - `folder` is a **CV fold, not a patient ID**; the patch metadata has no patient IDs.
+  - Whole images use `splits/whole_image_folds.csv`: patient-level 5 folds (NDB grouped by patient; each Rahman image is its own group). Round k: test = fold k, validation = fold (k mod 5) + 1, train = the rest. The segmenter uses the same rounds, and each whole image is segmented by the round model that held out its fold.
 - **Evaluation:** select models on validation macro-F1; evaluate the test set once. Report balanced accuracy and macro-F1, not just accuracy.
 - **Generated data is git-ignored:** datasets, `splits/`, `preprocessed*/`, `segmentation/`, `runs/`, `outputs/` and model weights. Only `docs/images/` figures are committed (whitelisted in `.gitignore`).
 
@@ -67,8 +74,15 @@ Pipeline order:
 - **NDB-UFES folds are patch-level**, not patient-level, so results are optimistic. This includes published benchmarks; the main one is Maia et al. 2024 with DenseNet-121 at 91.9% balanced accuracy.
 - **SAM/MedSAM at 1024px uses about 0.8 GB of GPU memory per image** in one attention tensor. Keep the batch size at 2 or less and use fp16 on a T4.
 - **Tissue detection on the Normal images needs per-image optical density.** Their glass background has strong colour casts, which break fixed colour thresholds.
+- **Epithelium masks** (`annotations/epithelium/masks/`, 50 whole images) are MedSAM-assisted annotations made by Claude, **not expert-verified**. Say so whenever Dice/IoU is reported.
+- **Epithelium segmenter works; the ROI does not help classification.**
+  - U-Net (ResNet-34) Dice 0.847 vs 0.798 all-tissue vs 0.779 whole image (10x: 0.81 / 0.77 / 0.71). Weakest on Rahman Normal at 10x.
+  - Whole-image balanced accuracy: all-tissue tiles 71.7 ± 4.9%, ROI tiles 70.4 ± 1.4% (macro-F1 67.3 vs 64.3); the two agree on 92% of images.
+  - **Source shortcut:** NDB images are never predicted Normal, Rahman images almost never leukoplakia, and 45% of NDB OSCC are called leukoplakia. NDB-only balanced accuracy is ~50–55% with patient-level folds, vs 90% on the patch folds.
+  - Tiling blurs **all** Rahman tiles (Normal and OSCC), by source rather than class.
+- **Magnification is not a shortcut:** about half of every class is 10x and half 40x (`check_magnification.py`).
 
-## Current status (2026-10-15)
+## Current status (2026-10-22)
 
 **Done:**
 - data pipeline, splits, tiling, stain normalisation, colour-bias check;
@@ -77,7 +91,8 @@ Pipeline order:
 - **multi-seed results** (seeds 1–3, sharpness-matched data): 3-class **89.7 ± 1.4%** balanced accuracy (primary; Maia 2024: 91.9%), 4-class 92.2 ± 1.1% (NDB-only 90.0 ± 1.7%, Normal F1 99.3%), greyscale 90.5 ± 1.4%. Seed spread is 1–2 points SD; single seed-42 runs are used only for the confusion-matrix, curve and Grad-CAM figures;
 - Grad-CAM and the border check;
 - README figures;
-- prediction tool: `oral_cancer/predictor.py`, CLI `python -m scripts.inference.predict <image>`, web demo `streamlit run app/streamlit_app.py --server.address localhost`. Verified to reproduce the test-set predictions exactly.
+- prediction tool: `oral_cancer/predictor.py`, CLI `python -m scripts.inference.predict <image>`, web demo `streamlit run app/streamlit_app.py --server.address localhost`. Verified to reproduce the test-set predictions exactly;
+- whole-image pipeline: patient-level folds, magnification check, 50 epithelium annotations (annotator: `streamlit run app/epithelium_annotator.py --server.address localhost`), U-Net segmenter, segmentation → ROI → classification comparison. Results are in the README; local copies in `runs/segmenter`, `runs/roi_*`.
 
 **Next:**
 1. Final report.
