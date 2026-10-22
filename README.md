@@ -165,15 +165,17 @@ All models are trained on the **sharpness-matched** data (see [Explainability](#
 - **Greyscale input** costs about 1.7 points, within about one SD of the colour model. Colour helps a little but is not the main signal. Normal stays at ~98% F1 without colour.
 - **Seed variation matters.** Single runs of the same model ranged over up to ~2 points (4-class: 90.9–93.0%), and an earlier single 4-class run of 88.6% was a low outlier against the 3-seed mean of 92.2%.
 
-The confusion matrix, training curves and per-class F1 below come from one representative run (seed 42).
+![Per-class F1](docs/images/per_class_f1.png)
+
+Per class (mean ± SD over the same 3 seeds), the colour model is ahead of greyscale in **every** class. "Without dysplasia" is the hardest class (85.9% F1) and varies most between runs.
+
+The confusion matrix and training curves below come from one example run (seed 42). That run is the low outlier mentioned above (88.6%), so they show the *kind* of mistakes the model makes, not its average score.
 
 ![Confusion matrix](docs/images/confusion_matrix.png)
 
 Errors are almost entirely between **adjacent grades** (OSCC ↔ with dysplasia, with ↔ without dysplasia), and OSCC is never predicted as non-dysplastic. "Without dysplasia" is the hardest class, consistent with the literature.
 
 ![Training curves](docs/images/training_curves.png)
-
-![Per-class F1](docs/images/per_class_f1.png)
 
 ---
 

@@ -297,23 +297,35 @@ def fig_confusion_matrix():
 # 6. CLASSIFICATION: PER-CLASS F1, COLOUR VS GREYSCALE
 # ============================================================
 
+SEEDS = (1, 2, 3)
+
+
 def fig_per_class_f1():
+    # Mean +/- SD over the 3 seeds, like the headline numbers. A single run
+    # can move 2-4 points (the seed-42 colour run was a low outlier), so a
+    # single-run bar chart would contradict the multi-seed comparison.
     fig, ax = plt.subplots(figsize=(9, 4))
     x = np.arange(4)
     width = 0.36
 
     runs = [("convnext_tiny_4class_224px", "colour"), ("convnext_tiny_4class_gray_224px", "greyscale")]
     for k, (run, label) in enumerate(runs):
-        preds = pd.read_csv(RUNS / run / "test_predictions.csv")
-        f1 = f1_score(preds["class"], preds["predicted"], labels=CLASSES_4, average=None) * 100
-        bars = ax.bar(x + (k - 0.5) * (width + 0.02), f1, width, color=SERIES[k], label=label)
-        for b, v in zip(bars, f1):
-            ax.text(b.get_x() + b.get_width() / 2, v + 0.6, f"{v:.1f}", ha="center", fontsize=9)
+        f1 = np.array([
+            f1_score(p["class"], p["predicted"], labels=CLASSES_4, average=None) * 100
+            for p in (pd.read_csv(RUNS / f"{run}_seed{s}" / "test_predictions.csv") for s in SEEDS)
+        ])
+        mean, sd = f1.mean(axis=0), f1.std(axis=0, ddof=1)
+        bars = ax.bar(x + (k - 0.5) * (width + 0.02), mean, width, yerr=sd, color=SERIES[k],
+                      error_kw=dict(ecolor=TEXT_SECONDARY, capsize=3, linewidth=1),
+                      label=f"{label} (mean ± SD, 3 seeds)")
+        for b, m, s in zip(bars, mean, sd):
+            ax.text(b.get_x() + b.get_width() / 2, m + s + 0.5, f"{m:.1f}", ha="center", fontsize=9)
 
     ax.set_xticks(x, [CLASS_LABELS[c] for c in CLASSES_4])
-    ax.set_ylim(75, 102)
+    ax.set_ylim(75, 104)
     ax.set_ylabel("Test F1 (%)")
-    ax.set_title("Per-class test F1 — Normal stays at ~99% even without colour", loc="left")
+    ax.set_title("Per-class test F1 — colour is better in every class; Normal stays ~98% without colour",
+                 loc="left", fontsize=11)
     ax.legend(loc="upper left", ncol=2)
     clean_axes(ax)
     save(fig, "per_class_f1.png")
