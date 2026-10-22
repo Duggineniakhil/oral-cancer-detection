@@ -43,7 +43,7 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 ### 5. Segmentation (MedSAM)
 **Show:** the mask-coverage chart and the example masks.
 **Say:**
-- "We ran MedSAM, a medical segmentation model, on all 6,626 images using Kaggle's free GPU."
+- "We ran MedSAM, a medical segmentation model, on all 6,626 images."
 - "**Finding:** MedSAM marked about **95–98% of every image** as the region of interest. In other words, it just selected the whole image."
 - "**Reason:** the dataset images are already cropped from *inside* the lesion. There's no separate 'lesion region' to find; the whole image is lesion."
 - "So we classify the whole image. This is an honest negative result: we tested the idea, and it doesn't add value for this kind of data."
@@ -89,7 +89,7 @@ A simple walkthrough to use while scrolling through the [README](../README.md). 
 - "In the whole-image experiment, the classes come from different datasets, so the model can tell them apart by source."
 
 ### 10. Project structure and Getting started
-**Say:** "The code is organised by stage: data, analysis, segmentation, classification, reporting. Everything can be re-run with one command per step, and the GPU steps run on Kaggle."
+**Say:** "The code is organised by stage: data, analysis, segmentation, classification, reporting. Everything can be re-run with one command per step."
 
 ### 11. Live demo (prediction tool)
 **Before the meeting**, start it in a terminal from the project folder:
@@ -138,4 +138,3 @@ It opens in the browser at `http://localhost:8501`. The first start takes about 
 - **"What does ± 1.1% mean?"** It's how much the result changes between training runs (standard deviation over 3 seeds). It shows the result is stable.
 - **"Why compare on three classes and not four?"** Published papers on this dataset only have those three classes; Normal is our addition. Those three also all come from one dataset, so the Normal shortcut doesn't affect that comparison.
 - **"How do you know the model isn't cheating?"** We checked with a colour test, a greyscale model, Grad-CAM heatmaps, and a sharpness test. That's how we found the Normal shortcut. We fixed sharpness and re-checked, and documented what remains.
-- **"Why Kaggle?"** Our laptop has no GPU. Kaggle gives a free GPU, and the code runs there directly from our GitHub repo.

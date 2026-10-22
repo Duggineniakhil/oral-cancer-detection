@@ -122,13 +122,13 @@ Normalisation removes the hue difference, but a colour/dataset signal remains. I
 
 ## Segmentation (MedSAM)
 
-MedSAM (ViT-B) was run on **all 6,626 patches** on a Kaggle T4 GPU (~40 min). Each patch received a **label-free** box prompt covering the stained tissue, so the same procedure applies at inference time.
+MedSAM (ViT-B) was run on **all 6,626 patches**. Each patch received a **label-free** box prompt covering the stained tissue, so the same procedure applies at inference time.
 
 ![MedSAM mask coverage](docs/images/segmentation_mask_coverage.png)
 
 ![MedSAM examples](docs/images/segmentation_examples.jpg)
 
-*Columns: box prompt · MedSAM mask · ROI crop. Examples from the Kaggle run, one per class (OSCC, with dysplasia, without dysplasia, Normal).*
+*Columns: box prompt · MedSAM mask · ROI crop. One example per class (OSCC, with dysplasia, without dysplasia, Normal).*
 
 **Finding.** The masks cover a median of 95–98% of each patch in every class. Almost all ROIs are the full 512×512 patch, and MedSAM's own predicted IoU is about 0.65 for every class.
 
