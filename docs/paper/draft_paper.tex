@@ -1,0 +1,528 @@
+% ============================================================
+% Draft paper: segmentation and classification of oral histopathology
+% Compile with pdfLaTeX (e.g. on Overleaf). Upload all figure files
+% (architecture.png, dataset_samples.jpg, ...) next to this file. References are written by hand in APA 7 style.
+% ============================================================
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[a4paper,margin=0.7in,columnsep=0.25in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[round,authoryear]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\captionsetup{font=small,labelfont=bf,skip=4pt}
+\setlist{nosep,leftmargin=*}
+\setlength{\bibsep}{2pt}
+\renewcommand{\arraystretch}{1.12}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% Show a framed placeholder if a figure file has not been uploaded yet
+\newcommand{\safeimage}[2]{%
+  \IfFileExists{#2}{\includegraphics[width=#1]{#2}}%
+  {\fbox{\parbox[c][3cm][c]{#1}{\centering\small Figure file missing:\\\texttt{#2}}}}}
+
+\title{\vspace{-1.2em}\textbf{Epithelium Segmentation and Four-Class Classification of Oral Histopathology Images}}
+\author{%
+  K.~Siddhartha \quad K.~Yoganand \quad D.~Akhil \quad D.~Akash\\[2pt]
+  \small Guide: Mrs.~Bharathi~D, Assistant Professor\\
+  \small Department of Computer Science and Engineering, \textit{Amrita Vishwa Vidyapeetham}}
+\date{\small Draft, \today}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+\begin{abstract}
+\noindent Oral squamous cell carcinoma (OSCC) and its precursor lesions are diagnosed by reading H\&E-stained biopsies, a task that is slow and, for epithelial dysplasia, notably subjective. We study a two-stage pipeline in which the relevant tissue is segmented before it is classified into four groups: OSCC, leukoplakia with dysplasia, leukoplakia without dysplasia and normal mucosa. Segmentation and classification are developed and evaluated separately. For classification we fine-tune ConvNeXt-Tiny on 6,626 patches built from the NDB-UFES dataset and a public normal-mucosa dataset, after tiling, stain normalisation and sharpness matching. Averaged over three seeds, the model reaches 92.2\,$\pm$\,1.1\% balanced accuracy, and 90.0\,$\pm$\,1.7\% on the three NDB-UFES classes, close to the 91.9\% reported by the strongest published model on the same official split. For segmentation, MedSAM marked 95--98\% of every patch, because the patches are already lesion crops. We therefore annotated the epithelium on 50 whole microscope images and trained a U-Net, which reached a Dice score of 0.85 under patient-level cross-validation, against 0.80 for a tissue-mask baseline. Restricting the classifier to the segmented epithelium on 1,461 whole images did not improve it (70.4\,$\pm$\,1.4\% vs.\ 71.7\,$\pm$\,4.9\% balanced accuracy). Shortcut analyses show why: the classifier partly recognises the source dataset rather than the tissue. We report these findings openly, since they matter for anyone combining public oral histopathology datasets.
+
+\medskip
+\noindent\textbf{Keywords:} oral squamous cell carcinoma; leukoplakia; epithelial dysplasia; segmentation; MedSAM; U-Net; ConvNeXt; shortcut learning
+\end{abstract}
+
+% ============================================================
+\section{Introduction}
+
+Lip and oral cavity cancers remain among the most frequent head and neck malignancies worldwide \citep{bray2024}, and the large majority are squamous cell carcinomas. Many tumours are preceded by oral potentially malignant disorders such as leukoplakia, and the presence and degree of epithelial dysplasia in these lesions is the main histological marker of their risk \citep{muller2022}. Diagnosis still rests on a pathologist reading a biopsy under the microscope. That reading takes time, and dysplasia grading in particular varies between observers.
+
+Deep learning has produced impressive accuracy figures on oral histopathology, often above 95\% for cancer versus non-cancer \citep{fati2022,das2023,albalawi2024}. Two practical questions are less often asked. First, does the model look at the tissue a pathologist would look at? Second, would it help to find that tissue first and classify only that region? Pathologists judge dysplasia inside the epithelium, so a pipeline that segments the epithelium before classifying it sounds natural. Recent promptable segmentation models such as MedSAM \citep{ma2024} make the first step easier to try.
+
+This paper reports what happened when we built and tested that idea. Our contributions are:
+\begin{itemize}
+  \item a four-class classifier (OSCC, leukoplakia with and without dysplasia, normal) based on ConvNeXt-Tiny, evaluated over three seeds on the official NDB-UFES split;
+  \item a separate segmentation study: MedSAM on patches, and an epithelium U-Net trained on 50 annotated whole images;
+  \item a controlled comparison of classification with and without the segmented region of interest (ROI) on 1,461 whole images with patient-level folds;
+  \item shortcut analyses (colour, sharpness, Grad-CAM) showing how combining datasets from different laboratories inflates some results.
+\end{itemize}
+
+% ============================================================
+\section{Overview of the domain}
+
+Computational pathology works on digitised H\&E slides or on microscope photographs. Because full images are large, most methods cut them into fixed-size patches, classify each patch and, if needed, combine the patch outputs into one decision per image. Two sources of variation complicate this. Staining differs between laboratories, which is why stain normalisation methods such as Macenko's are routinely applied \citep{hoque2024}. Acquisition differs too: scanner, camera, focus and magnification leave traces that networks can pick up. \citet{dehkharghanian2023} showed that deep features of TCGA slides reveal the hospital that contributed a slide with up to 86\% accuracy, even when the network was never trained for it.
+
+Segmentation in this domain targets nuclei, epithelium or tumour regions. U-Net and its many variants remain the standard architecture \citep{azad2024}. Foundation models changed the picture after the Segment Anything Model (SAM) \citep{kirillov2023}: MedSAM adapts SAM to medical images \citep{ma2024}, and $\mu$SAM fine-tunes it for light and electron microscopy \citep{archit2025}. On whole-slide images, zero-shot SAM handles large connected regions well but struggles with dense nuclei \citep{deng2025}.
+
+For classification, convolutional networks pretrained on ImageNet are still the workhorse. ConvNeXt modernises the ResNet design with ideas borrowed from vision transformers \citep{liu2022}, and pathology foundation models such as UNI learn general tissue features from large slide collections \citep{chen2024}. Explainability methods such as Grad-CAM are widely used to check where a model looks \citep{vandervelden2022}.
+
+% ============================================================
+\section{Literature survey}
+
+We reviewed studies from 2022 to 2025. A recent systematic review of deep learning for OSCC histopathology found 17 eligible studies (11 classification, 3 segmentation, 3 combined) and noted that only three had a low risk of bias in every domain \citep{pirayesh2024}. Tables~\ref{tab:litcls} and~\ref{tab:litseg} summarise the classification and segmentation work we draw on, and the paragraphs below state the main point of each row.
+
+\begin{table*}[t]
+\centering
+\caption{Literature survey: classification of oral histopathology images (2022--2025).}
+\label{tab:litcls}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}p{2.6cm}p{3.1cm}YYp{3.0cm}@{}}
+\toprule
+Study & Data & Method & Main result & Limitation \\
+\midrule
+\citet{fati2022} & Public OSCC histology images, binary & AlexNet/ResNet-18 features fused with colour, texture and shape features; PCA; ANN & 99.1\% accuracy, AUC 0.995 & Binary task; heavy hand-crafted fusion \\
+\citet{panigrahi2023} & OSCC histology, benign vs.\ malignant & Fine-tuned VGG16/19, ResNet50, InceptionV3, MobileNet vs.\ a 10-layer CNN & ResNet50 best: 96.6\% accuracy & Binary; single split \\
+\citet{das2023} & Histopathological oral images & Custom CNN compared with seven pretrained CNNs & 97.82\% cross-validation accuracy & Binary; no localisation \\
+\citet{ahmad2023} & OSCC histology images & Pretrained CNN features + GLCM, HOG, LBP; PCA; SVM & 97.00\% accuracy (DenseNet201 hybrid) & Binary; multi-stage pipeline \\
+\citet{albalawi2024} & 1,224 images, 230 patients, several magnifications & Customised EfficientNet-B3 & 99\% accuracy, normal vs.\ OSCC & Binary; split level not stated \\
+\citet{maia2024} & NDB-UFES, 3,763 patches & CNNs, transformers, few-shot learning & DenseNet-121: 91.91\% balanced accuracy (3 classes) & Patch-level folds; no ROI \\
+\citet{meer2025} & 100$\times$ and 400$\times$ image sets & Self-attention MobileNet-V2 and DarkNet-19, feature fusion, whale optimisation & 98.7\% / 96.3\% accuracy & Binary; complex optimisation \\
+\citet{peng2024} & 56 leukoplakia WSIs; 229 external TMA images & EfficientNet-B0 feature detectors + logistic grading model & Dysplasia grading: 81.3\% (internal), 86.5\% (external) & Small cohort; moderate AUC \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{Literature survey: segmentation in oral and general histopathology (2022--2025).}
+\label{tab:litseg}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}p{2.6cm}p{3.1cm}YYp{3.0cm}@{}}
+\toprule
+Study & Data & Method & Main result & Limitation \\
+\midrule
+\citet{silva2022} & Oral epithelial dysplasia, mouse tongue (296 regions) & Mask R-CNN nuclei segmentation, morphology/texture features, polynomial classifier & Grading AUC up to 0.96 & Animal tissue; nuclei only \\
+\citet{shephard2024} & OED WSIs: 193 cases + 89 external & In-house nuclei and epithelium segmentation, interpretable features, shallow network & Transformation risk AUROC 0.75 externally & Needs WSIs and long follow-up \\
+\citet{zhang2024} & Hyperspectral H\&E lymph-node sections & FD-Net feature distillation, coarse-to-fine nuclei segmentation & Dice 1.98\% above DeepLabV3 & Special hyperspectral hardware \\
+\citet{ronnau2024} & 1,563 Papanicolaou images, 52 patients & CNN for cell segmentation and classification & Expert-level agreement & Cytology, not biopsy \\
+\citet{ma2024} & 1.5M+ medical image--mask pairs & MedSAM: SAM fine-tuned with box prompts & Strong across modalities & Few histology examples \\
+\citet{deng2025} & Whole-slide images & Zero-shot SAM with point/box prompts & Good for large tissue regions & Poor on dense nuclei \\
+\citet{archit2025} & Light and electron microscopy & $\mu$SAM: fine-tuned SAM + annotation tool & Clear gains over SAM & Not H\&E-specific \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\paragraph{Classification studies.} \citet{fati2022} fused deep features from AlexNet and ResNet-18 with colour, texture and shape descriptors and reached 99.1\% accuracy on a binary OSCC task. \citet{panigrahi2023} compared five fine-tuned CNNs with a network trained from scratch and found ResNet50 best at 96.6\%. \citet{das2023} proposed a custom CNN that reached 97.82\% cross-validated accuracy against seven established models. \citet{ahmad2023} combined DenseNet201 features with GLCM, HOG and LBP descriptors in an SVM and obtained 97.00\%. \citet{albalawi2024} adapted EfficientNet-B3 to separate normal epithelium from OSCC on 1,224 images and reported 99\%. \citet{meer2025} fused two self-attention CNNs and tuned them with a whale optimisation variant, reaching 98.7\% and 96.3\% on the two magnifications. \citet{maia2024} benchmarked CNNs, transformers and few-shot methods on the three NDB-UFES classes; DenseNet-121 led with 91.91\% balanced accuracy, and CNNs and transformers did not differ significantly. \citet{peng2024} graded dysplasia in leukoplakia whole slides with EfficientNet-B0 detectors and reached 81.3\% internally and 86.5\% on an external set.
+
+\paragraph{Segmentation studies.} \citet{silva2022} segmented nuclei with Mask R-CNN in oral dysplasia and graded lesions with an AUC of up to 0.96, on mouse tissue. \citet{shephard2024} segmented nuclei and epithelium in whole slides and used interpretable features to predict malignant transformation (external AUROC 0.75). \citet{zhang2024} segmented cancerous nuclei in hyperspectral lymph-node images and outperformed DeepLabV3. \citet{ronnau2024} segmented and classified cells in Papanicolaou cytology at expert level. Among foundation models, MedSAM \citep{ma2024} generalises across modalities, $\mu$SAM \citep{archit2025} improves SAM for microscopy, and zero-shot SAM on whole slides works for large regions but not dense nuclei \citep{deng2025}.
+
+\paragraph{Research gaps.} (i) Most classification studies solve a binary task and report near-perfect accuracy without checking for shortcuts. (ii) Few studies test whether segmenting a region first actually improves classification. (iii) Splits are rarely made at the patient level, although several datasets contain many images per patient. (iv) When classes come from different datasets, models can learn the source instead of the disease \citep{dehkharghanian2023}. Our work addresses these four points.
+
+% ============================================================
+\section{Materials and methods}
+
+\subsection{Datasets}
+
+We use two public H\&E datasets, both under CC BY 4.0 (Table~\ref{tab:data}). NDB-UFES \citep{ribeiro2023} provides 237 microscope images from 69 patients and 3,763 labelled patches of 512$\times$512 pixels derived from its images, each labelled as OSCC, leukoplakia with dysplasia or leukoplakia without dysplasia. It has no normal tissue, so normal mucosa comes from the database of \citet{rahman2020}, which also contains OSCC images. Both were captured with a Leica ICC50 HD camera at 2048$\times$1536 pixels.
+
+\begin{table}[h]
+\centering
+\caption{Data used in the two pipelines.}
+\label{tab:data}
+\footnotesize
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Class (source) & Patch pipeline & Whole images \\
+\midrule
+OSCC (NDB-UFES) & 1,126 & 91 \\
+With dysplasia (NDB-UFES) & 1,930 & 89 \\
+Without dysplasia (NDB-UFES) & 707 & 57 \\
+Normal (Rahman) & 2,863 tiles of 290 & 290 \\
+OSCC (Rahman) & -- & 934 \\
+\midrule
+Total & 6,626 & 1,461 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\safeimage{0.92\textwidth}{dataset_samples.jpg}
+\caption{Sample images. Top: whole microscope images from NDB-UFES and from the Rahman et al.\ database (normal mucosa and OSCC). Bottom: one 512$\times$512 patch per class after stain normalisation. Images: NDB-UFES and Rahman et al., CC BY 4.0.}
+\label{fig:data}
+\end{figure*}
+
+Figure~\ref{fig:data} shows example images from both sources and one patch of each class.
+
+\textbf{Splits.} For patches we keep the official NDB-UFES folds (folds 1--4 train, 5 validation, 6 test) so that results can be compared with published work. Normal images are split per image before tiling, giving 4,510 / 1,067 / 1,049 training, validation and test patches. The official folds are made over patches, so one patient can appear in training and test. For whole images we therefore build patient-level five-fold cross-validation: in round $k$ fold $k$ is the test set, the next fold is the validation set, and the remaining three are used for training.
+
+\subsection{Overall architecture}
+
+Figure~\ref{fig:arch} shows the two pipelines. The patch pipeline is the main classifier. The whole-image pipeline tests segmentation $\rightarrow$ ROI $\rightarrow$ classification against classification without segmentation, on exactly the same images.
+
+\textbf{(a) Patch pipeline.} \emph{Step 1, input:} NDB-UFES patches and Normal images, cut into 512$\times$512 patches. \emph{Step 2, preprocessing:} Normal images are tiled and blurred, and every patch is Macenko-normalised to one H\&E appearance. \emph{Step 3, MedSAM:} a box around the tissue is given as the prompt; the image encoder and prompt encoder feed the mask decoder, which returns the ROI mask. On these patches the mask covers almost the whole patch. \emph{Step 4, ConvNeXt-Tiny:} the patch passes through the stem and four stages of ConvNeXt blocks (3, 3, 9 and 3 blocks). The figure shows the real feature maps of the trained model for one OSCC test patch: the maps shrink from 56$\times$56 to 7$\times$7 while the number of channels grows from 96 to 768, so early maps still show cell-level texture and the last ones encode a few strong regional responses. \emph{Step 5, output:} global average pooling and a linear layer turn the last maps into four class probabilities. The figure shows one correctly classified test patch of each class with the probability the model gave its true class, together with the Grad-CAM heatmap computed from the stage-4 maps.
+
+\textbf{(b) Whole-image pipeline.} \emph{Step 1:} 1,461 whole images are split into five folds by patient. \emph{Step 2:} the U-Net encoder compresses the image into context features, and the decoder rebuilds a full-resolution map using skip connections. \emph{Step 3:} the output is an epithelium mask. \emph{Step 4:} the image is cut into 512$\times$512 tiles; tiles with at least 50\% epithelium form the ROI set (green), while the comparison set keeps every tile with at least 60\% tissue (green and orange). \emph{Step 5:} the same ConvNeXt-Tiny classifies each tile. \emph{Step 6:} tile probabilities are averaged into one prediction per image, and the two settings are compared.
+
+\begin{figure*}[t]
+\centering
+\safeimage{\textwidth}{architecture.png}
+\caption{Architecture of the study, drawn with real images and outputs from our data. (a) Patch pipeline: input images are tiled into 512$\times$512 patches, preprocessed, passed through MedSAM (whose mask covers almost the whole patch) and classified by ConvNeXt-Tiny. Step 4 shows real feature maps of the trained model at each stage (the three strongest channels; size given as height$\times$width$\times$channels); step 5 shows one correctly classified test patch per class with the predicted probability of its true class (median-confidence example of each class) and a Grad-CAM heatmap. (b) Whole-image pipeline: a U-Net segments the epithelium, 512$\times$512 tiles with at least 50\% epithelium form the ROI, the same classifier scores each tile, and the tile probabilities are averaged into one prediction per image (shown for a held-out image of leukoplakia without dysplasia).}
+\label{fig:arch}
+\end{figure*}
+
+\subsection{Preprocessing}
+
+\textbf{Tiling instead of resizing.} The normal images are four times larger than the NDB-UFES patches. Shrinking them would change the apparent cell size and give the network an easy cue, so we cut them into native 512$\times$512 tiles and keep tiles with at least 60\% tissue. Tissue is found from optical density relative to each image's own background, which copes with the strong colour casts of the glass.
+
+\textbf{Sharpness matching.} The normal images turned out to be about five times sharper than NDB-UFES (Section~\ref{sec:shortcut}). We apply a Gaussian blur with $\sigma = 2.5$ pixels to them, a value calibrated so that sharpness no longer separates the sources.
+
+\textbf{Stain normalisation.} All images are mapped to one H\&E appearance with the Macenko method \citep{hoque2024}, using a reference fitted on NDB-UFES training patches only.
+
+\subsection{Segmentation models}
+
+\textbf{MedSAM on patches.} MedSAM \citep{ma2024} keeps the SAM architecture \citep{kirillov2023}: a ViT-B image encoder turns the image into a $64\times64$ grid of embeddings, a prompt encoder embeds a bounding box, and a light two-way transformer decoder predicts the mask and an IoU estimate. We prompt it with a label-free box around the stained tissue, so the same procedure would apply to an unlabelled image. Class-dependent prompts were avoided because they would leak the label.
+
+\textbf{Epithelium U-Net on whole images.} Because patches are already lesion crops, segmentation was moved to the whole images, where epithelium sits next to connective tissue, muscle and glass. Fifty whole images (five per source, class and magnification; ten per fold) were annotated with MedSAM box suggestions plus manual corrections. These masks are AI-assisted and have not been verified by a pathologist. The segmenter is a U-Net \citep{azad2024} with an ImageNet ResNet-34 encoder. The encoder halves the resolution five times while increasing the channels to 512, which captures context such as layered, densely packed cells versus loose fibres. The decoder upsamples step by step and concatenates the encoder feature maps through skip connections, which restores the exact boundary. A $1\times1$ convolution and a sigmoid give the epithelium probability $p_i$ of every pixel. Images are processed at half resolution (1024$\times$768) and the model is trained on random 512$\times$512 crops with flips, rotations and colour jitter, using
+\begin{equation}
+\mathcal{L}_{\text{seg}} = \text{BCE}(p, g) + \Bigl(1 - \frac{2\sum_i p_i g_i + 1}{\sum_i p_i + \sum_i g_i + 1}\Bigr),
+\end{equation}
+where $g_i$ is the annotation. The best epoch is selected on validation Dice, and every whole image is later segmented by the model of the round that held out its fold.
+
+\subsection{Classification model}
+
+ConvNeXt-Tiny \citep{liu2022} is a pure convolutional network. A $4\times4$ convolution with stride 4 (the ``patchify'' stem) maps the 224$\times$224 input to a $56\times56$ grid with 96 channels. Four stages with 3, 3, 9 and 3 blocks follow, with 96, 192, 384 and 768 channels and downsampling between stages. Each block applies a $7\times7$ depthwise convolution, layer normalisation, a $1\times1$ convolution that expands the channels four times, a GELU activation and a $1\times1$ convolution back, all inside a residual connection. Early stages respond to edges and nuclei, later stages to cell crowding and tissue architecture. Global average pooling and a new linear layer produce four logits, and a softmax turns them into class probabilities.
+
+We start from ImageNet weights and fine-tune with AdamW (learning rate $10^{-4}$, weight decay 0.05), a one-cycle schedule, mixed precision and batch size 32 for up to 25 epochs, stopping after six epochs without improvement in validation macro-F1. Augmentation uses flips, 90$^\circ$ rotations, random resized crops, strong colour jitter and random blur. To handle class imbalance the loss is class-weighted cross-entropy with label smoothing $\varepsilon = 0.1$:
+\begin{equation}
+\mathcal{L}_{\text{cls}} = -\sum_{c=1}^{4} w_c\, \tilde{y}_c \log \hat{y}_c, \qquad w_c = \frac{N}{4 N_c},
+\end{equation}
+where $N_c$ is the number of training patches of class $c$ and $\tilde{y}$ the smoothed label. Each setting is trained with three seeds and reported as mean\,$\pm$\,SD. In the whole-image pipeline the same model is trained for up to 15 epochs per round, and an image's prediction is the average of its tiles' probabilities.
+
+\subsection{Evaluation}
+
+For $C$ classes, balanced accuracy and macro-F1 are
+\begin{equation}
+\text{BACC} = \frac{1}{C}\sum_{c=1}^{C}\frac{TP_c}{TP_c + FN_c}, \qquad \text{F1}_{\text{macro}} = \frac{1}{C}\sum_{c=1}^{C}\frac{2P_cR_c}{P_c + R_c}.
+\end{equation}
+Segmentation is scored with $\text{Dice} = 2|P\cap G|/(|P|+|G|)$ and $\text{IoU} = |P\cap G|/|P\cup G|$. Models are selected on validation data, and the test set is evaluated once.
+
+\textbf{Shortcut checks.} We test whether the class can be predicted from colour histograms alone (logistic regression), train a greyscale version of the classifier, measure the share of each Grad-CAM heatmap that falls on the patch border \citep{vandervelden2022}, and measure how well a single image property (Laplacian sharpness, brightness, contrast) separates Normal from the other classes.
+
+% ============================================================
+\section{Experimental results}
+
+\subsection{Segmentation results}
+
+\textbf{MedSAM on patches.} Table~\ref{tab:medsam} shows that MedSAM marked almost the entire patch in every class. NDB-UFES patches were cut from inside the lesion, so there is no smaller region to isolate, and the ROI equals the patch (Figure~\ref{fig:medsam}). The patch classifier therefore uses whole patches.
+
+\begin{figure}[h]
+\centering
+\safeimage{\columnwidth}{medsam_examples.jpg}
+\caption{MedSAM outputs on one patch per class: the label-free box prompt (top) and the predicted mask in red (bottom). The mask covers almost the entire patch.}
+\label{fig:medsam}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{MedSAM mask area as a fraction of the patch (6,626 patches).}
+\label{tab:medsam}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Class & Median area & IQR & Predicted IoU \\
+\midrule
+OSCC & 0.983 & 0.933--0.999 & 0.656 \\
+With dysplasia & 0.964 & 0.902--0.993 & 0.664 \\
+Without dysplasia & 0.951 & 0.873--0.992 & 0.673 \\
+Normal & 0.947 & 0.867--0.990 & 0.657 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Epithelium U-Net.} Table~\ref{tab:segdice} compares the U-Net with two simple baselines on the 50 annotated images, each tested by a model that never saw that patient. The U-Net is best overall (Dice 0.847, IoU 0.763) and the margin is clearest at 10$\times$, where stroma and glass take up more of the image. It does best on Rahman OSCC images (0.936) and worst on Rahman normal images (0.778), a group with only ten annotations. Figure~\ref{fig:segex} shows typical cases.
+
+\begin{table}[h]
+\centering
+\caption{Epithelium segmentation, patient-level cross-validation (50 images; annotations AI-assisted).}
+\label{tab:segdice}
+\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Method & Dice & IoU & 10$\times$ & 40$\times$ & NDB-UFES \\
+\midrule
+\textbf{U-Net (ours)} & \textbf{0.847} & \textbf{0.763} & \textbf{0.808} & \textbf{0.885} & \textbf{0.840} \\
+All tissue & 0.798 & 0.699 & 0.771 & 0.824 & 0.776 \\
+Whole image & 0.779 & 0.687 & 0.712 & 0.847 & 0.776 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\safeimage{\textwidth}{epithelium_examples.jpg}
+\caption{Epithelium segmentation on held-out whole images at 10$\times$, one example per source and class (the image with the median Dice of its group). Rows: input image, AI-assisted annotation, U-Net output (green = epithelium). The U-Net follows the epithelium--stroma boundary well on NDB-UFES and Rahman OSCC images and is weakest on Rahman normal mucosa. Images: NDB-UFES and Rahman et al., CC BY 4.0.}
+\label{fig:segex}
+\end{figure*}
+
+\subsection{Classification results}
+
+Table~\ref{tab:cls} gives the test results of the four-class model and its greyscale control, both averaged over three seeds. The colour model reaches 92.2\% balanced accuracy and 92.0\% macro-F1. Removing colour costs about 1.7 points, roughly one standard deviation, so colour helps but is not the main signal. Table~\ref{tab:perclass} shows that the colour model is ahead in every class, and that leukoplakia without dysplasia is the hardest class.
+
+\begin{table}[h]
+\centering
+\caption{Four-class test results (n = 1,049; mean\,$\pm$\,SD over 3 seeds).}
+\label{tab:cls}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Metric (\%) & Colour & Greyscale \\
+\midrule
+Balanced accuracy & \textbf{92.2\,$\pm$\,1.1} & 90.5\,$\pm$\,1.4 \\
+Macro precision & \textbf{91.9\,$\pm$\,0.5} & 89.7\,$\pm$\,1.7 \\
+Macro recall & \textbf{92.2\,$\pm$\,1.1} & 90.5\,$\pm$\,1.4 \\
+Macro-F1 & \textbf{92.0\,$\pm$\,0.8} & 90.1\,$\pm$\,1.6 \\
+Accuracy & \textbf{93.8\,$\pm$\,0.5} & 92.0\,$\pm$\,1.1 \\
+Macro AUC & \textbf{0.985\,$\pm$\,0.001} & 0.983\,$\pm$\,0.001 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Per-class test F1 (\%, mean of 3 seeds).}
+\label{tab:perclass}
+\footnotesize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Model & OSCC & With dys. & Without dys. & Normal \\
+\midrule
+Colour & \textbf{92.4} & \textbf{90.4} & \textbf{85.9} & \textbf{99.3} \\
+Greyscale & 90.7 & 88.4 & 83.1 & 98.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Errors fall almost entirely between neighbouring grades (Figure~\ref{fig:cm}): OSCC is confused with dysplasia, and dysplasia with its absence. OSCC is never predicted as leukoplakia without dysplasia or as normal tissue. The same borderline cases are difficult for pathologists \citep{maia2024}.
+
+\begin{figure}[h]
+\centering
+\safeimage{0.82\columnwidth}{confusion_matrix.png}
+\caption{Confusion matrix of one example run (seed 42, the lowest-scoring run at 88.6\% balanced accuracy), shown for the pattern of errors rather than the average score.}
+\label{fig:cm}
+\end{figure}
+
+Figure~\ref{fig:curves} shows the training of the same run. Validation macro-F1 rises quickly in the first five epochs and levels off near 90\%; the checkpoint with the best validation score is kept. The validation loss flattens while the training loss keeps falling, which is why early stopping is used.
+
+\begin{figure}[h]
+\centering
+\safeimage{\columnwidth}{training_curves.png}
+\caption{Training curves (seed 42): validation macro-F1 per epoch with the selected epoch marked (left), and training and validation loss (right).}
+\label{fig:curves}
+\end{figure}
+
+Figure~\ref{fig:pred} shows the output for one new image: the predicted class with its probability and the Grad-CAM heatmap of the region that drove the decision.
+
+\begin{figure}[h]
+\centering
+\safeimage{\columnwidth}{prediction_example.jpg}
+\caption{Model output for an OSCC test image: predicted class and probabilities, with the Grad-CAM heatmap.}
+\label{fig:pred}
+\end{figure}
+
+\textbf{Comparison with published work.} Published NDB-UFES results cover only its three classes. To compare fairly, we score our four-class model on those three classes of the same official test fold (Table~\ref{tab:compare}). At 90.0\% it is comparable to the best published model, about two points lower and within the run-to-run spread. Our figure comes from a four-class model, is averaged over seeds, and is not affected by the Normal shortcut discussed below, since all three classes come from one source.
+
+\begin{table}[h]
+\centering
+\caption{Comparison on the three NDB-UFES classes, official test fold (\%).}
+\label{tab:compare}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Model & BACC & Precision & Recall \\
+\midrule
+DenseNet-121 \citep{maia2024} & 91.91\,$\pm$\,0.84 & 91.93 & 91.93 \\
+MobileNet-V2 \citep{maia2024} & 91.49\,$\pm$\,0.77 & -- & -- \\
+CoaT \citep{maia2024} & 90.84 & -- & -- \\
+\textbf{ConvNeXt-Tiny, 4-class (ours)} & 90.0\,$\pm$\,1.7 & 90.1\,$\pm$\,1.2 & 90.0\,$\pm$\,1.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Shortcut analysis}
+\label{sec:shortcut}
+
+Table~\ref{tab:shortcut} collects the checks. Colour histograms alone separate Normal from the other classes almost perfectly (AUC 0.999), and normalisation only lowers this to 0.974. In greyscale, Normal still reaches 98\% F1, so colour is not the main cue. Figure~\ref{fig:gradcam} shows typical heatmaps: on the NDB-UFES classes they fall on cells and tissue, while on Normal they often sit at the top edge of the patch. Over the whole test set, Grad-CAM placed 65--66\% of the Normal heatmap on the patch border, against 49--54\% for the NDB-UFES classes, close to the 49\% expected from an even spread. Sharpness at the model's input size separated Normal with AUC 0.946; after blurring, this fell to 0.524. Retraining on the sharpness-matched data lowered the Normal border share only to about 60\%, and brightness (AUC 0.76) and contrast (0.81) still differ. The model still recognises part of the Normal source rather than the tissue alone, so its 99\% Normal F1 should not be read as evidence of tissue recognition.
+
+\begin{figure}[h]
+\centering
+\safeimage{\columnwidth}{gradcam_examples.jpg}
+\caption{Grad-CAM on correctly classified test patches (top: patch, bottom: heatmap). For Normal, the heatmap concentrates on the patch border.}
+\label{fig:gradcam}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Shortcut checks for the cross-dataset Normal class.}
+\label{tab:shortcut}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Check & Before & After \\
+\midrule
+Colour-only, Normal-vs-rest AUC & 0.999 & 0.974\textsuperscript{a} \\
+Colour-only, 4-class BACC & 0.666 & 0.630\textsuperscript{a} \\
+Sharpness alone, Normal AUC & 0.946 & 0.524\textsuperscript{b} \\
+Grad-CAM border share, Normal & 65--66\% & 59--61\%\textsuperscript{b} \\
+Grad-CAM border share, NDB classes & 49--54\% & 46--52\%\textsuperscript{b} \\
+\bottomrule
+\multicolumn{3}{@{}l}{\scriptsize \textsuperscript{a}after stain normalisation; \textsuperscript{b}after sharpness matching.}
+\end{tabular}
+\end{table}
+
+\subsection{Segmentation $\rightarrow$ ROI $\rightarrow$ classification}
+
+Table~\ref{tab:roi} compares the two whole-image settings. Both cover the same 1,461 images (14,485 tissue tiles vs.\ 14,107 ROI tiles) and use the same classifier. Restricting the classifier to the segmented epithelium did not help: the difference is smaller than the spread between folds, and both settings give the same answer for 92\% of images. The ROI setting is only more stable across folds. The gap does not open at 10$\times$ either, where segmentation removes the most non-epithelial tissue.
+
+\begin{table}[h]
+\centering
+\caption{Whole-image classification with and without the segmented ROI (\%, mean\,$\pm$\,SD over 5 patient-level folds).}
+\label{tab:roi}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Metric & All tissue & Epithelium ROI \\
+\midrule
+Balanced accuracy & 71.7\,$\pm$\,4.9 & 70.4\,$\pm$\,1.4 \\
+Macro-F1 & 67.3\,$\pm$\,5.3 & 64.3\,$\pm$\,0.6 \\
+Balanced accuracy, 10$\times$ & 72.4\,$\pm$\,9.2 & 71.0\,$\pm$\,5.2 \\
+Balanced accuracy, 40$\times$ & 70.7\,$\pm$\,5.4 & 69.9\,$\pm$\,2.6 \\
+BACC, NDB-UFES images only & 54.5\,$\pm$\,12.8 & 49.6\,$\pm$\,4.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The reason is visible in the predictions (Figure~\ref{fig:source}). NDB-UFES images were never predicted as Normal, and Rahman images were almost never predicted as leukoplakia. Most OSCC images come from Rahman, and 45\% of the NDB-UFES OSCC images were called leukoplakia. Within one source the picture differs: Rahman normal versus OSCC is about 91\% correct, while dysplasia versus no dysplasia in NDB-UFES is close to chance. Removing stroma cannot remove a cue that is present in the epithelium as well. With patient-level folds, accuracy on the NDB-UFES classes (about 50--55\%) is far below the patch-level 90\%, which shows how much the shared-patient patch folds flatter results.
+
+\begin{figure}[h]
+\centering
+\safeimage{\columnwidth}{roi_by_source.png}
+\caption{Whole-image predictions by source and true class (all-tissue setting, all five folds). Predictions follow the source dataset: NDB-UFES images are never called Normal, and Rahman images are almost never called leukoplakia.}
+\label{fig:source}
+\end{figure}
+
+% ============================================================
+\section{Discussion}
+
+The classifier is strong on the standard benchmark, but three findings put that number in context. First, segmentation only helps when there is something to remove. On lesion-centred patches MedSAM had nothing to isolate. On whole images the epithelium U-Net worked, yet classifying only its output did not change the result, because the dominant cue was the source dataset. Second, combining datasets from different laboratories creates shortcuts that colour normalisation and sharpness matching reduce but do not remove, consistent with \citet{dehkharghanian2023}. Third, patch-level folds overestimate performance: the same model family drops sharply once patients are kept apart.
+
+The study has limitations. The 50 epithelium masks are AI-assisted and were not checked by a pathologist, so Dice measures agreement with them. Results use three seeds, and differences below about two points are not meaningful. Normal and most OSCC images come from a second laboratory, so a fair four-class evaluation would need all classes from one institution.
+
+% ============================================================
+\section{Conclusion}
+
+We built and evaluated a segmentation-then-classification pipeline for oral histopathology, with each stage tested on its own. The four-class ConvNeXt-Tiny model reaches 92.2\,$\pm$\,1.1\% balanced accuracy and 90.0\% on the three NDB-UFES classes, comparable to the best published result. An epithelium U-Net reaches a Dice score of 0.85, but classifying only the segmented epithelium did not improve whole-image classification, because the model partly recognises the source dataset. Future work should use single-institution data that covers all four classes, expert-verified epithelium masks, and pathology foundation models such as UNI \citep{chen2024} as feature extractors.
+
+% ============================================================
+\section*{Data availability}
+NDB-UFES and the Rahman et al.\ database are publicly available under CC BY 4.0. The code is available at \url{https://github.com/Duggineniakhil/oral-cancer-detection}.
+
+% ============================================================
+\begin{thebibliography}{99}
+\footnotesize
+
+\bibitem[Ahmad et~al.(2023)]{ahmad2023}
+Ahmad, M., Irfan, M. A., Sadique, U., Haq, I. u., Jan, A., Khattak, M. I., Ghadi, Y. Y., \& Aljuaid, H. (2023). Multi-method analysis of histopathological image for early diagnosis of oral squamous cell carcinoma using deep learning and hybrid techniques. \textit{Cancers, 15}(21), 5247. \url{https://doi.org/10.3390/cancers15215247}
+
+\bibitem[Albalawi et~al.(2024)]{albalawi2024}
+Albalawi, E., Thakur, A., Ramakrishna, M. T., Bhatia Khan, S., SankaraNarayanan, S., Almarri, B., \& Hadi, T. H. (2024). Oral squamous cell carcinoma detection using EfficientNet on histopathological images. \textit{Frontiers in Medicine, 10}, 1349336. \url{https://doi.org/10.3389/fmed.2023.1349336}
+
+\bibitem[Archit et~al.(2025)]{archit2025}
+Archit, A., Freckmann, L., Nair, S., Khalid, N., Hilt, P., Rajashekar, V., Freitag, M., Teuber, C., Spitzner, M., Tapia Contreras, C., Buckley, G., von Haaren, S., Gupta, S., Grade, M., Wirth, M., Schneider, G., Dengel, A., Ahmed, S., \& Pape, C. (2025). Segment Anything for Microscopy. \textit{Nature Methods, 22}(3), 579--591. \url{https://doi.org/10.1038/s41592-024-02580-4}
+
+\bibitem[Azad et~al.(2024)]{azad2024}
+Azad, R., Aghdam, E. K., Rauland, A., Jia, Y., Avval, A. H., Bozorgpour, A., Karimijafarbigloo, S., Cohen, J. P., Adeli, E., \& Merhof, D. (2024). Medical image segmentation review: The success of U-Net. \textit{IEEE Transactions on Pattern Analysis and Machine Intelligence, 46}(12), 10076--10095. \url{https://doi.org/10.1109/TPAMI.2024.3435571}
+
+\bibitem[Bray et~al.(2024)]{bray2024}
+Bray, F., Laversanne, M., Sung, H., Ferlay, J., Siegel, R. L., Soerjomataram, I., \& Jemal, A. (2024). Global cancer statistics 2022: GLOBOCAN estimates of incidence and mortality worldwide for 36 cancers in 185 countries. \textit{CA: A Cancer Journal for Clinicians, 74}(3), 229--263. \url{https://doi.org/10.3322/caac.21834}
+
+\bibitem[Chen et~al.(2024)]{chen2024}
+Chen, R. J., Ding, T., Lu, M. Y., Williamson, D. F. K., Jaume, G., Song, A. H., Chen, B., Zhang, A., Shao, D., Shaban, M., Williams, M., Oldenburg, L., Weishaupt, L. L., Wang, J. J., Vaidya, A., Le, L. P., Gerber, G., Sahai, S., Williams, W., \& Mahmood, F. (2024). Towards a general-purpose foundation model for computational pathology. \textit{Nature Medicine, 30}(3), 850--862. \url{https://doi.org/10.1038/s41591-024-02857-3}
+
+\bibitem[Das et~al.(2023)]{das2023}
+Das, M., Dash, R., \& Mishra, S. K. (2023). Automatic detection of oral squamous cell carcinoma from histopathological images of oral mucosa using deep convolutional neural network. \textit{International Journal of Environmental Research and Public Health, 20}(3), 2131. \url{https://doi.org/10.3390/ijerph20032131}
+
+\bibitem[Dehkharghanian et~al.(2023)]{dehkharghanian2023}
+Dehkharghanian, T., Bidgoli, A. A., Riasatian, A., Mazaheri, P., Campbell, C. J. V., Pantanowitz, L., Tizhoosh, H. R., \& Rahnamayan, S. (2023). Biased data, biased AI: Deep networks predict the acquisition site of TCGA images. \textit{Diagnostic Pathology, 18}(1), 67. \url{https://doi.org/10.1186/s13000-023-01355-3}
+
+\bibitem[Deng et~al.(2025)]{deng2025}
+Deng, R., Cui, C., Liu, Q., Yao, T., Remedios, L. W., Bao, S., Landman, B. A., Wheless, L. E., Coburn, L. A., Wilson, K. T., Wang, Y., Zhao, S., Fogo, A. B., Yang, H., Tang, Y., \& Huo, Y. (2025). Segment Anything Model (SAM) for digital pathology: Assess zero-shot segmentation on whole slide imaging. \textit{Electronic Imaging, 37}(14), 132-1--132-4. \url{https://doi.org/10.2352/EI.2025.37.14.COIMG-132}
+
+\bibitem[Fati et~al.(2022)]{fati2022}
+Fati, S. M., Senan, E. M., \& Javed, Y. (2022). Early diagnosis of oral squamous cell carcinoma based on histopathological images using deep and hybrid learning approaches. \textit{Diagnostics, 12}(8), 1899. \url{https://doi.org/10.3390/diagnostics12081899}
+
+\bibitem[Hoque et~al.(2024)]{hoque2024}
+Hoque, M. Z., Keskinarkaus, A., Nyberg, P., \& Sepp\"anen, T. (2024). Stain normalization methods for histopathology image analysis: A comprehensive review and experimental comparison. \textit{Information Fusion, 102}, 101997. \url{https://doi.org/10.1016/j.inffus.2023.101997}
+
+\bibitem[Kirillov et~al.(2023)]{kirillov2023}
+Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W.-Y., Doll\'ar, P., \& Girshick, R. (2023). Segment anything. In \textit{Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)} (pp. 3992--4003). \url{https://doi.org/10.1109/ICCV51070.2023.00371}
+
+\bibitem[Liu et~al.(2022)]{liu2022}
+Liu, Z., Mao, H., Wu, C.-Y., Feichtenhofer, C., Darrell, T., \& Xie, S. (2022). A ConvNet for the 2020s. In \textit{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)} (pp. 11966--11976). \url{https://doi.org/10.1109/CVPR52688.2022.01167}
+
+\bibitem[Ma et~al.(2024)]{ma2024}
+Ma, J., He, Y., Li, F., Han, L., You, C., \& Wang, B. (2024). Segment anything in medical images. \textit{Nature Communications, 15}(1), 654. \url{https://doi.org/10.1038/s41467-024-44824-z}
+
+\bibitem[Maia et~al.(2024)]{maia2024}
+Maia, B. M. S., Ribeiro de Assis, M. C. F., de Lima, L. M., Rocha, M. B., Calente, H. G., Correa, M. L. A., Camisasca, D. R., \& Krohling, R. A. (2024). Transformers, convolutional neural networks, and few-shot learning for classification of histopathological images of oral cancer. \textit{Expert Systems with Applications, 241}, 122418. \url{https://doi.org/10.1016/j.eswa.2023.122418}
+
+\bibitem[Meer et~al.(2025)]{meer2025}
+Meer, M., Khan, M. A., Jabeen, K., Alzahrani, A. I., Alalwan, N., Shabaz, M., \& Khan, F. (2025). Deep convolutional neural networks information fusion and improved whale optimization algorithm based smart oral squamous cell carcinoma classification framework using histopathological images. \textit{Expert Systems, 42}(1), e13536. \url{https://doi.org/10.1111/exsy.13536}
+
+\bibitem[Muller \& Tilakaratne(2022)]{muller2022}
+Muller, S., \& Tilakaratne, W. M. (2022). Update from the 5th edition of the World Health Organization classification of head and neck tumors: Tumours of the oral cavity and mobile tongue. \textit{Head and Neck Pathology, 16}(1), 54--62. \url{https://doi.org/10.1007/s12105-021-01402-9}
+
+\bibitem[Panigrahi et~al.(2023)]{panigrahi2023}
+Panigrahi, S., Nanda, B. S., Bhuyan, R., Kumar, K., Ghosh, S., \& Swarnkar, T. (2023). Classifying histopathological images of oral squamous cell carcinoma using deep transfer learning. \textit{Heliyon, 9}(3), e13444. \url{https://doi.org/10.1016/j.heliyon.2023.e13444}
+
+\bibitem[Peng et~al.(2024)]{peng2024}
+Peng, J., Xu, Z., Dan, H., Li, J., Wang, J., Luo, X., Xu, H., Zeng, X., \& Chen, Q. (2024). Oral epithelial dysplasia detection and grading in oral leukoplakia using deep learning. \textit{BMC Oral Health, 24}(1), 434. \url{https://doi.org/10.1186/s12903-024-04191-z}
+
+\bibitem[Pirayesh et~al.(2024)]{pirayesh2024}
+Pirayesh, Z., Mohammad-Rahimi, H., Ghasemi, N., Motamedian, S., Sadeghi, T. S., Koohi, H., Rokhshad, R., Lotfi, S. M., Najafi, A., Alajaji, S. A., Khoury, Z. H., Jessri, M., \& Sultan, A. S. (2024). Deep learning-based image classification and segmentation on digital histopathology for oral squamous cell carcinoma: A systematic review and meta-analysis. \textit{Journal of Oral Pathology \& Medicine, 53}(9), 551--566. \url{https://doi.org/10.1111/jop.13578}
+
+\bibitem[Rahman et~al.(2020)]{rahman2020}
+Rahman, T. Y., Mahanta, L. B., Das, A. K., \& Sarma, J. D. (2020). Histopathological imaging database for oral cancer analysis. \textit{Data in Brief, 29}, 105114. \url{https://doi.org/10.1016/j.dib.2020.105114}
+
+\bibitem[Ribeiro-de-Assis et~al.(2023)]{ribeiro2023}
+Ribeiro-de-Assis, M. C. F., Soares, J. P., de Lima, L. M., de Barros, L. A. P., Gr\~ao-Velloso, T. R., Krohling, R. A., \& Camisasca, D. R. (2023). NDB-UFES: An oral cancer and leukoplakia dataset composed of histopathological images and patient data. \textit{Data in Brief, 48}, 109128. \url{https://doi.org/10.1016/j.dib.2023.109128}
+
+\bibitem[R\"onnau et~al.(2024)]{ronnau2024}
+R\"onnau, M. M., Lepper, T. W., Guedes, I. C., Espinosa, A. L., Rados, P. V., \& Oliveira, M. M. (2024). Automatic segmentation and classification of Papanicolaou-stained cells and dataset for oral cancer detection. \textit{Computers in Biology and Medicine, 180}, 108967. \url{https://doi.org/10.1016/j.compbiomed.2024.108967}
+
+\bibitem[Shephard et~al.(2024)]{shephard2024}
+Shephard, A. J., Bashir, R. M. S., Mahmood, H., Jahanifar, M., Minhas, F., Raza, S. E. A., McCombe, K. D., Craig, S. G., James, J., Brooks, J., Nankivell, P., Mehanna, H., Khurram, S. A., \& Rajpoot, N. M. (2024). A fully automated and explainable algorithm for predicting malignant transformation in oral epithelial dysplasia. \textit{npj Precision Oncology, 8}(1), 137. \url{https://doi.org/10.1038/s41698-024-00624-8}
+
+\bibitem[Silva et~al.(2022)]{silva2022}
+Silva, A. B., Martins, A. S., Tosta, T. A. A., Neves, L. A., Servato, J. P. S., de Ara\'ujo, M. S., de Faria, P. R., \& do Nascimento, M. Z. (2022). Computational analysis of histological images from hematoxylin and eosin-stained oral epithelial dysplasia tissue sections. \textit{Expert Systems with Applications, 193}, 116456. \url{https://doi.org/10.1016/j.eswa.2021.116456}
+
+\bibitem[van der Velden et~al.(2022)]{vandervelden2022}
+van der Velden, B. H. M., Kuijf, H. J., Gilhuijs, K. G. A., \& Viergever, M. A. (2022). Explainable artificial intelligence (XAI) in deep learning-based medical image analysis. \textit{Medical Image Analysis, 79}, 102470. \url{https://doi.org/10.1016/j.media.2022.102470}
+
+\bibitem[Zhang et~al.(2024)]{zhang2024}
+Zhang, X., Li, Q., Li, W., Guo, Y., Zhang, J., Guo, C., Chang, K., \& Lovell, N. H. (2024). FD-Net: Feature distillation network for oral squamous cell carcinoma lymph node segmentation in hyperspectral imagery. \textit{IEEE Journal of Biomedical and Health Informatics, 28}(3), 1552--1563. \url{https://doi.org/10.1109/JBHI.2024.3350245}
+
+\end{thebibliography}
+
+\end{document}

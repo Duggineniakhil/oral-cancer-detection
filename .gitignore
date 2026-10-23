@@ -96,6 +96,8 @@ Thumbs.db
 !docs/images/
 !docs/images/*.png
 !docs/images/*.jpg
+!docs/paper/figures/*.png
+!docs/paper/figures/*.jpg
 
 # Local Claude Code preview config
 .claude/launch.json
