@@ -29,6 +29,7 @@ dataset_3_rahman_oscc/
 /segmentation_subset/
 /segmentation/
 /kaggle_upload/
+/dataport_upload/
 /runs/
 /runs_before_blur/
 /annotation/
